@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GodBox - God Simulator</title>
+  <meta name="description" content="GodBox - A god simulation game inspired by WorldBox and RimWorld. Shape worlds, guide civilizations, and wield divine powers." />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="game-container"></div>
+
+  <!-- Top HUD Bar -->
+  <div id="hud-top">
+    <div class="hud-left">
+      <div class="hud-title">GODBOX</div>
+      <div class="hud-stat"><span class="stat-icon">👥</span><span id="stat-pop">0</span></div>
+      <div class="hud-stat"><span class="stat-icon">🏠</span><span id="stat-buildings">0</span></div>
+      <div class="hud-stat"><span class="stat-icon">📅</span> Day <span id="stat-day">1</span></div>
+    </div>
+    <div class="hud-center">
+      <div class="hud-time">
+        <span id="time-icon">☀️</span>
+        <span id="stat-time">06:00</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-stat"><span class="stat-icon">🪵</span><span id="stat-wood">0</span></div>
+      <div class="hud-stat"><span class="stat-icon">🍖</span><span id="stat-food">0</span></div>
+      <div class="hud-stat"><span class="stat-icon">🪨</span><span id="stat-stone">0</span></div>
+      <div class="hud-stat"><span class="stat-icon">✨</span><span id="stat-gold">0</span></div>
+      <div class="hud-stat" style="color: #ba68c8; border-color: rgba(186,104,200,0.3); background: rgba(186,104,200,0.05);"><span class="stat-icon">🔮</span><span id="stat-faith">0</span></div>
+      <button id="btn-speed" class="hud-btn" title="Game Speed">⏩ x1</button>
+    </div>
+  </div>
+
+  <!-- Left Power Panel -->
+  <div id="power-panel">
+    <div class="panel-header">⚡ GOD POWERS</div>
+
+    <!-- Section: Tools -->
+    <div class="power-section-label">🔧 Tools</div>
+    <div class="power-grid">
+      <button class="power-btn active" data-power="select" title="Select / Inspect">
+        <span class="power-icon">👆</span>
+        <span class="power-name">Select</span>
+      </button>
+    </div>
+
+    <!-- Section: Creation -->
+    <div class="power-section-label">✨ Creation</div>
+    <div class="power-grid">
+      <button class="power-btn" data-power="spawn_human" title="Spawn Human (25 Faith)">
+        <span class="power-icon">🧑</span>
+        <span class="power-name">Human</span>
+        <span class="power-cost">25🔮</span>
+      </button>
+      <button class="power-btn" data-power="spawn_animal" title="Spawn Animal (10 Faith)">
+        <span class="power-icon">🐄</span>
+        <span class="power-name">Animal</span>
+        <span class="power-cost">10🔮</span>
+      </button>
+      <button class="power-btn" data-power="spawn_tree" title="Plant Tree (3 Faith)">
+        <span class="power-icon">🌳</span>
+        <span class="power-name">Tree</span>
+        <span class="power-cost">3🔮</span>
+      </button>
+    </div>
+
+    <!-- Section: Nature -->
+    <div class="power-section-label">🌿 Nature</div>
+    <div class="power-grid">
+      <button class="power-btn" data-power="rain" title="Rain - Extinguishes fire, heals (20 Faith)">
+        <span class="power-icon">🌧️</span>
+        <span class="power-name">Rain</span>
+        <span class="power-cost">20🔮</span>
+      </button>
+      <button class="power-btn" data-power="lightning" title="Lightning Strike (20 Faith)">
+        <span class="power-icon">⚡</span>
+        <span class="power-name">Smite</span>
+        <span class="power-cost">20🔮</span>
+      </button>
+    </div>
+
+    <!-- Section: Destruction -->
+    <div class="power-section-label">💀 Destruction</div>
+    <div class="power-grid">
+      <button class="power-btn" data-power="fire" title="Ignite (8 Faith)">
+        <span class="power-icon">🔥</span>
+        <span class="power-name">Ignite</span>
+        <span class="power-cost">8🔮</span>
+      </button>
+      <button class="power-btn" data-power="meteor" title="Meteor Strike (50 Faith)">
+        <span class="power-icon">☄️</span>
+        <span class="power-name">Meteor</span>
+        <span class="power-cost">50🔮</span>
+      </button>
+      <button class="power-btn" data-power="earthquake" title="Earthquake (40 Faith)">
+        <span class="power-icon">💥</span>
+        <span class="power-name">Quake</span>
+        <span class="power-cost">40🔮</span>
+      </button>
+      <button class="power-btn" data-power="tornado" title="Tornado (35 Faith)">
+        <span class="power-icon">🌪️</span>
+        <span class="power-name">Tornado</span>
+        <span class="power-cost">35🔮</span>
+      </button>
+    </div>
+
+    <!-- Section: Divine (WorldBox inspired) -->
+    <div class="power-section-label">🌟 Divine</div>
+    <div class="power-grid">
+      <button class="power-btn" data-power="divine_light" title="Divine Light - Heal & cure all debuffs (30 Faith)">
+        <span class="power-icon">✝️</span>
+        <span class="power-name">Light</span>
+        <span class="power-cost">30🔮</span>
+      </button>
+      <button class="power-btn" data-power="plague" title="Plague - Spread disease (25 Faith)">
+        <span class="power-icon">☠️</span>
+        <span class="power-name">Plague</span>
+        <span class="power-cost">25🔮</span>
+      </button>
+      <button class="power-btn" data-power="madness" title="Madness - Drive creatures insane (20 Faith)">
+        <span class="power-icon">🤪</span>
+        <span class="power-name">Madness</span>
+        <span class="power-cost">20🔮</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Info Panel -->
+  <div id="info-panel">
+    <div id="info-content">
+      <span id="info-text">Welcome to GodBox! Use the powers on the left to shape your world. Inspired by WorldBox & RimWorld.</span>
+    </div>
+  </div>
+
+  <!-- Minimap -->
+  <div id="minimap-container">
+    <div class="panel-header">🗺️ MAP</div>
+    <canvas id="minimap" width="150" height="150"></canvas>
+  </div>
+
+  <!-- Tooltip -->
+  <div id="tooltip" class="hidden"></div>
+
+  <!-- God Ranking Panel -->
+  <div id="god-info-panel" class="god-info-panel">
+    <div class="god-ranking">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

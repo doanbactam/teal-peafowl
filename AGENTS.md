@@ -1,0 +1,1 @@
+Lấy ý tưởng từ truyện Nền Văn Minh Nebula , WorldBox ( https://www.superworldbox.com/ ) , https://store.steampowered.com/app/294100/RimWorld/
