@@ -203,7 +203,7 @@ export class AIGod extends God {
 
   // ---- Action: Spawn units ----
   decideSpawn(game, myPop) {
-    const maxPop = 15 + Math.floor(game.day / 5) * 2;
+    const maxPop = 15 + Math.floor(game.day / 5) * 4;
     if (myPop >= maxPop) return null;
 
     const cost = 25;
@@ -471,20 +471,54 @@ export class GodManager {
         const tz = Math.round(aiGod.startZ + Math.sin(angle) * dist);
 
         if (this.game.terrain.isWalkable(tx, tz)) {
-          this.game.creatureManager.spawnHuman(tx, tz, aiGod.faction);
-          spawned++;
+          const success = this.game.simulation
+            ? this.game.simulation.dispatch({
+                type: 'race.spawnHumans',
+                tileX: tx,
+                tileZ: tz,
+                faction: aiGod.faction,
+                count: 1,
+                raceId: aiGod.raceId,
+                randomOffset: false,
+              })
+            : this.game.creatureManager.spawnHuman(tx, tz, aiGod.faction, aiGod.raceId);
+          if (success) {
+            spawned++;
+          }
         }
       }
 
       // Place 2 initial buildings near start position
       const initialBuildings = ['house', 'farm'];
       for (const bType of initialBuildings) {
-        const pos = this.findWalkableNear(this.game, aiGod.startX, aiGod.startZ, 5);
-        if (pos && this.game.buildingManager.canBuild(pos.x, pos.z, bType)) {
-          // AI pays with faith, not player resources — use dummy resources
-          const aiResources = { wood: 9999, food: 9999, stone: 9999, gold: 9999, faith: 9999 };
-          this.game.buildingManager.build(pos.x, pos.z, bType, aiResources);
-          aiGod.buildingCount++;
+        let pos = null;
+        for (let attempts = 0; attempts < 20; attempts++) {
+          const candidate = this.findWalkableNear(this.game, aiGod.startX, aiGod.startZ, 7);
+          if (candidate && this.game.buildingManager.canBuild(candidate.x, candidate.z, bType)) {
+            pos = candidate;
+            break;
+          }
+        }
+        if (pos) {
+          const success = this.game.simulation
+            ? this.game.simulation.dispatch({
+                type: 'civ.build',
+                tileX: pos.x,
+                tileZ: pos.z,
+                buildingType: bType,
+                faction: aiGod.faction,
+                resources: { wood: 9999, food: 9999, stone: 9999, gold: 9999, faith: 9999 },
+              })
+            : this.game.buildingManager.build(
+                pos.x,
+                pos.z,
+                bType,
+                { wood: 9999, food: 9999, stone: 9999, gold: 9999, faith: 9999 },
+                aiGod.faction,
+              );
+          if (success) {
+            aiGod.buildingCount++;
+          }
         }
       }
     }
@@ -523,11 +557,206 @@ export class GodManager {
 
     // Update player god stats
     if (this.playerGod) {
-      this.playerGod.stats.totalBuilt = this.game.buildingManager.getCount();
-      this.playerGod.stats.territory = this.game.creatureManager.getPopulationCount();
+      this.playerGod.stats.totalBuilt = this.game.buildingManager.getCountByType('house', 0)
+        + this.game.buildingManager.getCountByType('farm', 0)
+        + this.game.buildingManager.getCountByType('storage', 0)
+        + this.game.buildingManager.getCountByType('temple', 0)
+        + this.game.buildingManager.getCountByType('mine', 0)
+        + this.game.buildingManager.getCountByType('barracks', 0)
+        + this.game.buildingManager.getCountByType('tower', 0)
+        + this.game.buildingManager.getCountByType('wall', 0)
+        + this.game.buildingManager.getCountByType('road', 0)
+        + this.game.buildingManager.getCountByType('smithy', 0)
+        + this.game.buildingManager.getCountByType('market', 0);
+      this.playerGod.stats.territory = this.getFactionPopulation(0);
       // Sync faith back to game resources (player god's faith is game.resources.faith)
       this.game.resources.faith = this.playerGod.faith;
     }
+
+    // Diplomacy & War evaluations
+    if (!this.diplomacy) {
+      this.diplomacy = {};
+      this.warTimers = {};
+      for (let i = 0; i <= 4; i++) {
+        this.diplomacy[i] = {};
+        this.warTimers[i] = {};
+        for (let j = 0; j <= 4; j++) {
+          this.diplomacy[i][j] = 'peace';
+          this.warTimers[i][j] = 0;
+        }
+      }
+    }
+
+    // Tick war timers
+    for (let i = 0; i <= 4; i++) {
+      for (let j = i + 1; j <= 4; j++) {
+        if (this.diplomacy[i][j] === 'war') {
+          this.warTimers[i][j] = (this.warTimers[i][j] || 0) + dt;
+          this.warTimers[j][i] = this.warTimers[i][j];
+        }
+      }
+    }
+
+    // Periodic diplomacy evaluation
+    if (Math.random() < dt * 0.08) {
+      for (const god of this.gods) {
+        if (god.isPlayer) continue;
+        if (god.personality === 'diplomat') continue; // Diplomats don't start wars
+
+        const myPop = this.getFactionPopulation(god.faction);
+        const warLikelihood = god.personality === 'aggressive' ? 0.4 : 0.12;
+        const dayFactor = Math.min(2, 1 + this.game.day * 0.015);
+
+        if (Math.random() < warLikelihood * dayFactor) {
+          // Pick a rival — use relations score + power ratio
+          const rivals = this.gods.filter(g => g.id !== god.id);
+          let target = null;
+          let bestScore = -Infinity;
+
+          for (const rival of rivals) {
+            if (this.diplomacy[god.faction][rival.faction] === 'war') continue;
+            const rivalPop = this.getFactionPopulation(rival.faction);
+            const powerRatio = myPop / Math.max(1, rivalPop);
+
+            // Relations-based: lower relations → more likely to declare war
+            const relations = this.game.simulation?.select('diplomacyState', { factionA: god.faction, factionB: rival.faction })?.relations ?? 0;
+            const relPenalty = Math.max(0, relations + 40) * 0.02; // >-40 relations = penalty to war
+            const score = powerRatio + Math.random() * 0.5 - relPenalty;
+
+            if (score > bestScore && myPop >= 4 && relations < -20) {
+              bestScore = score;
+              target = rival;
+            }
+          }
+
+          if (target && bestScore > 1.0) {
+            if (this.game.simulation) {
+              this.game.simulation.dispatch({
+                type: 'conflict.declareWar',
+                attackerFaction: god.faction,
+                defenderFaction: target.faction,
+                attackerName: god.name,
+                defenderName: target.name,
+              });
+            } else {
+              this.diplomacy[god.faction][target.faction] = 'war';
+              this.diplomacy[target.faction][god.faction] = 'war';
+              this.warTimers[god.faction][target.faction] = 0;
+              this.warTimers[target.faction][god.faction] = 0;
+            }
+          }
+        }
+
+        // Peace treaty: after 60+ seconds of war, weaker side may sue for peace
+        for (const rival of this.gods) {
+          if (rival.id === god.id) continue;
+          if (this.diplomacy[god.faction][rival.faction] !== 'war') continue;
+          const warDuration = this.warTimers[god.faction][rival.faction] || 0;
+          if (warDuration > 60 && Math.random() < dt * 0.03) {
+            const myPow = this.getFactionPopulation(god.faction);
+            const rivalPow = this.getFactionPopulation(rival.faction);
+            // Use war score + population for peace decision
+            const warState = this.game.simulation?.select('warState', { factionA: god.faction, factionB: rival.faction });
+            const myScore = warState?.scoreA ?? 0;
+            const rivalScore = warState?.scoreB ?? 0;
+            const isLosing = myPow < rivalPow * 0.7 || rivalScore > myScore + 15;
+            if (isLosing) {
+              if (this.game.simulation) {
+                this.game.simulation.dispatch({
+                  type: 'conflict.makePeace',
+                  factionA: god.faction,
+                  factionB: rival.faction,
+                  sourceName: god.name,
+                  targetName: rival.name,
+                });
+              } else {
+                this.diplomacy[god.faction][rival.faction] = 'peace';
+                this.diplomacy[rival.faction][god.faction] = 'peace';
+                this.warTimers[god.faction][rival.faction] = 0;
+                this.warTimers[rival.faction][god.faction] = 0;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Trade relations: peace factions with shared trade routes gain relations
+    if (Math.random() < dt * 0.03) {
+      for (const god of this.gods) {
+        if (god.isPlayer) continue;
+        if (!this.diplomacy || this.diplomacy[god.faction]?.[0] === 'war') continue;
+        // If both have markets, relations improve
+        const myMarkets = this.game.buildingManager.getCountByType('market', god.faction);
+        const playerMarkets = this.game.buildingManager.getCountByType('market', 0);
+        if (myMarkets > 0 && playerMarkets > 0) {
+          this.game.simulation?.dispatch({
+            type: 'conflict.adjustRelations',
+            factionA: god.faction,
+            factionB: 0,
+            delta: 2,
+          });
+        }
+      }
+    }
+
+    // War actions: during war, AI sends raid parties toward enemy buildings
+    for (const god of this.gods) {
+      if (god.isPlayer) continue;
+      for (const rival of this.gods) {
+        if (rival.id === god.id) continue;
+        if (this.diplomacy[god.faction][rival.faction] !== 'war') continue;
+        
+        // Periodically spawn raiding units toward enemy territory
+        if (Math.random() < dt * 0.04) {
+          const enemyBuildings = [];
+          for (const b of this.game.buildingManager.buildings.values()) {
+            if (b.faction === rival.faction) enemyBuildings.push(b);
+          }
+          if (enemyBuildings.length > 0 && god.faith >= 15) {
+            god.spendFaith(15);
+            const target = enemyBuildings[Math.floor(Math.random() * enemyBuildings.length)];
+            // Spawn raiders near the target building
+            const raidCount = god.personality === 'aggressive' ? 3 : 2;
+            for (let i = 0; i < raidCount; i++) {
+              const rx = target.x + Math.floor(Math.random() * 6 - 3);
+              const rz = target.z + Math.floor(Math.random() * 6 - 3);
+              if (this.game.terrain.isWalkable(rx, rz)) {
+                if (this.game.simulation) {
+                  this.game.simulation.dispatch({
+                    type: 'conflict.spawnRaidParty',
+                    tileX: rx,
+                    tileZ: rz,
+                    faction: god.faction,
+                    count: 1,
+                    raceId: god.raceId,
+                  });
+                } else {
+                  const raider = this.game.creatureManager.spawnHuman(rx, rz, god.faction, god.raceId);
+                  if (raider) {
+                    raider.attack += 5;
+                    raider.speed *= 1.15;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  getFactionPopulation(faction) {
+    let count = 0;
+    for (const c of this.game.creatureManager.creatures) {
+      if (c.alive && c.type === 'human' && c.faction === faction) count++;
+    }
+    return count;
+  }
+
+  isAtWar(factionA, factionB) {
+    if (!this.diplomacy || !this.diplomacy[factionA]) return false;
+    return this.diplomacy[factionA][factionB] === 'war';
   }
 
   /**
@@ -539,13 +768,25 @@ export class GodManager {
 
       switch (action.type) {
         case 'spawn': {
-          const count = action.count || 1;
-          for (let j = 0; j < count; j++) {
-            // Add slight randomness so units don't stack on same tile
-            const ox = action.tileX + Math.floor(Math.random() * 3 - 1);
-            const oz = action.tileZ + Math.floor(Math.random() * 3 - 1);
-            if (this.game.terrain.isWalkable(ox, oz)) {
-              this.game.creatureManager.spawnHuman(ox, oz, action.faction);
+          if (this.game.simulation) {
+            const god = this.getGodByFaction(action.faction);
+            this.game.simulation.dispatch({
+              type: 'race.spawnHumans',
+              tileX: action.tileX,
+              tileZ: action.tileZ,
+              faction: action.faction,
+              count: action.count || 1,
+              raceId: god?.raceId,
+            });
+          } else {
+            const count = action.count || 1;
+            for (let j = 0; j < count; j++) {
+              const ox = action.tileX + Math.floor(Math.random() * 3 - 1);
+              const oz = action.tileZ + Math.floor(Math.random() * 3 - 1);
+              if (this.game.terrain.isWalkable(ox, oz)) {
+                const god = this.getGodByFaction(action.faction);
+                this.game.creatureManager.spawnHuman(ox, oz, action.faction, god?.raceId);
+              }
             }
           }
           break;
@@ -553,9 +794,17 @@ export class GodManager {
 
         case 'build': {
           if (this.game.buildingManager.canBuild(action.tileX, action.tileZ, action.buildingType)) {
-            // AI uses its own economy (faith-based), not player resources
             const aiResources = { wood: 9999, food: 9999, stone: 9999, gold: 9999, faith: 9999 };
-            const success = this.game.buildingManager.build(action.tileX, action.tileZ, action.buildingType, aiResources);
+            const success = this.game.simulation
+              ? this.game.simulation.dispatch({
+                  type: 'civ.build',
+                  tileX: action.tileX,
+                  tileZ: action.tileZ,
+                  buildingType: action.buildingType,
+                  faction: action.faction,
+                  resources: aiResources,
+                })
+              : this.game.buildingManager.build(action.tileX, action.tileZ, action.buildingType, aiResources, action.faction);
             if (success) {
               const god = this.getGod(action.faction);
               if (god) god.stats.totalBuilt++;
@@ -573,27 +822,42 @@ export class GodManager {
         }
 
         case 'bless': {
-          // Blessing is already applied by the AI god's purchaseBlessing()
-          // This is a notification point for the game loop / event system
-          if (this.game.eventSystem) {
-            const god = this.getGod(action.godId);
-            if (god) {
-              this.game.eventSystem.showNotification({
-                type: 'info',
-                icon: '✨',
-                message: `<b>${god.name}</b> acquired blessing: <b>${action.blessingName}</b>`,
-              });
-            }
+          const god = this.getGod(action.godId);
+          if (god && this.game.simulation) {
+            this.game.simulation.dispatch({
+              type: 'god.notifyBlessing',
+              godName: god.name,
+              blessingName: action.blessingName,
+            });
+          } else if (god && this.game.eventSystem) {
+            this.game.eventSystem.showNotification({
+              type: 'info',
+              icon: '✨',
+              message: `<b>${god.name}</b> acquired blessing: <b>${action.blessingName}</b>`,
+            });
           }
           break;
         }
 
         case 'expand': {
-          // Expand is effectively a strategic spawn at the frontier
-          const count = action.count || 1;
-          for (let j = 0; j < count; j++) {
-            if (this.game.terrain.isWalkable(action.tileX, action.tileZ)) {
-              this.game.creatureManager.spawnHuman(action.tileX, action.tileZ, action.faction);
+          if (this.game.simulation) {
+            const god = this.getGodByFaction(action.faction);
+            this.game.simulation.dispatch({
+              type: 'race.spawnHumans',
+              tileX: action.tileX,
+              tileZ: action.tileZ,
+              faction: action.faction,
+              count: action.count || 1,
+              raceId: god?.raceId,
+              randomOffset: false,
+            });
+          } else {
+            const count = action.count || 1;
+            for (let j = 0; j < count; j++) {
+              if (this.game.terrain.isWalkable(action.tileX, action.tileZ)) {
+                const god = this.getGodByFaction(action.faction);
+                this.game.creatureManager.spawnHuman(action.tileX, action.tileZ, action.faction, god?.raceId);
+              }
             }
           }
           break;
@@ -672,9 +936,15 @@ export class GodManager {
     if (god && !god.isPlayer && god.buildingCount !== undefined) {
       return god.buildingCount;
     }
-    // Player faction — use building manager count (approximate)
+    // Player faction - use the actual faction-tagged buildings.
     if (this.game.buildingManager) {
-      return this.game.buildingManager.getCount();
+      let count = 0;
+      for (const building of this.game.buildingManager.buildings.values()) {
+        if (building.faction === faction) {
+          count++;
+        }
+      }
+      return count;
     }
     return 0;
   }

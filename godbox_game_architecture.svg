@@ -1,0 +1,127 @@
+<svg width="100%" viewBox="0 0 960 1080" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>GodBox architecture - Game shell, WorldSimulation core, and 5 world logic layers</title>
+  <desc>Updated GodBox architecture diagram showing Game as shell, WorldSimulation as simulation core, selectors and dispatch as the standard interface, and the 5 logic layers: God, World, Race, Civilization, and Conflict.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7f9fc" />
+      <stop offset="100%" stop-color="#eef3f8" />
+    </linearGradient>
+    <linearGradient id="shellGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#eef5ff" />
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f5f8fb" />
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+    </marker>
+    <style>
+      .title { font: 700 28px 'Segoe UI', Arial, sans-serif; fill: #10233d; }
+      .subtitle { font: 400 14px 'Segoe UI', Arial, sans-serif; fill: #53657d; }
+      .section { font: 700 18px 'Segoe UI', Arial, sans-serif; fill: #18324f; }
+      .label { font: 600 14px 'Segoe UI', Arial, sans-serif; fill: #17324c; }
+      .body { font: 400 12px 'Segoe UI', Arial, sans-serif; fill: #55687e; }
+      .small { font: 600 11px 'Segoe UI', Arial, sans-serif; fill: #6a7d92; letter-spacing: 0.08em; text-transform: uppercase; }
+      .tick { font: 700 13px 'Segoe UI', Arial, sans-serif; fill: #244566; }
+      .note { font: 400 12px 'Segoe UI', Arial, sans-serif; fill: #64758a; }
+    </style>
+  </defs>
+
+  <rect width="960" height="1080" fill="url(#bg)" />
+
+  <text x="48" y="52" class="title">GodBox Architecture</text>
+  <text x="48" y="78" class="subtitle">Game shell bên ngoài, WorldSimulation ở giữa, logic thế giới chia chuẩn thành 5 layer với read/write flow rõ ràng.</text>
+
+  <rect x="40" y="112" width="880" height="96" rx="22" fill="url(#shellGrad)" stroke="#95b7df" stroke-width="1.5" />
+  <text x="64" y="145" class="small">Presentation Shell</text>
+  <text x="64" y="171" class="section">Game</text>
+  <text x="64" y="192" class="body">Three.js scene, camera, input, HUD, hover, minimap, post-processing, inspector.</text>
+  <text x="590" y="171" class="label">Vai tro</text>
+  <text x="590" y="192" class="body">Khong giu world logic nghiep vu. Chi goi `simulation.update(rawDt)` va doc selectors de render/UI.</text>
+
+  <line x1="480" y1="208" x2="480" y2="244" stroke="#6a8caf" stroke-width="2" marker-end="url(#arrow)" />
+
+  <rect x="40" y="248" width="880" height="730" rx="28" fill="url(#coreGrad)" stroke="#a9bccc" stroke-width="1.5" />
+  <text x="64" y="286" class="small">Simulation Core</text>
+  <text x="64" y="318" class="title" style="font-size:24px;">WorldSimulation</text>
+  <text x="64" y="342" class="subtitle">Composition root cua world state, tick order, selectors, command dispatch, va event routing.</text>
+
+  <rect x="72" y="372" width="360" height="82" rx="18" fill="#fff6df" stroke="#d6b35f" stroke-width="1.2" />
+  <text x="94" y="400" class="small">Read Interface</text>
+  <text x="94" y="426" class="label">Selectors / Read Models</text>
+  <text x="94" y="445" class="body">`getColonyDiagnostics`, `getFaithEconomy`, `getFactionRaceId`, `buildStorytellerState`.</text>
+
+  <rect x="528" y="372" width="360" height="82" rx="18" fill="#ffe8ee" stroke="#cf8194" stroke-width="1.2" />
+  <text x="550" y="400" class="small">Write Interface</text>
+  <text x="550" y="426" class="label">Dispatch / Commands</text>
+  <text x="550" y="445" class="body">`god.castPower`, `story.runEvent`, `civ.build`, `race.spawnHumans`, `conflict.declareWar`.</text>
+
+  <line x1="432" y1="413" x2="528" y2="413" stroke="#a7873d" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#arrow)" />
+
+  <rect x="72" y="478" width="816" height="48" rx="14" fill="#edf4fb" stroke="#9ab3c8" stroke-width="1" />
+  <text x="92" y="508" class="tick">Tick order: God -> World -> Race -> Civilization -> Conflict -> Storyteller finalize</text>
+
+  <rect x="92" y="548" width="776" height="88" rx="18" fill="#efeaff" stroke="#8b78d6" stroke-width="1.2" />
+  <circle cx="126" cy="592" r="18" fill="#6f5ac8" />
+  <text x="120" y="598" style="font:700 14px 'Segoe UI', Arial, sans-serif; fill:#ffffff;">1</text>
+  <text x="160" y="580" class="section" style="font-size:17px; fill:#4b3ca5;">God Layer</text>
+  <text x="160" y="603" class="body">Domain logic, divine intent, blessings, player powers, social after-effects of intervention.</text>
+  <text x="160" y="621" class="body">Khong spawn/build/damage truc tiep qua module khac; phat command vao simulation.</text>
+
+  <rect x="92" y="654" width="776" height="88" rx="18" fill="#e7f7ef" stroke="#4caa80" stroke-width="1.2" />
+  <circle cx="126" cy="698" r="18" fill="#2f9967" />
+  <text x="120" y="704" style="font:700 14px 'Segoe UI', Arial, sans-serif; fill:#ffffff;">2</text>
+  <text x="160" y="686" class="section" style="font-size:17px; fill:#17704a;">World Layer</text>
+  <text x="160" y="709" class="body">Clock, day-night, season, terrain hazards, fire, weather-like world changes, tile-scale state.</text>
+  <text x="160" y="727" class="body">Dam bao civilization doc duoc state moi sau khi world da on dinh trong cung tick.</text>
+
+  <rect x="92" y="760" width="776" height="88" rx="18" fill="#fff3e1" stroke="#d39b44" stroke-width="1.2" />
+  <circle cx="126" cy="804" r="18" fill="#c87c22" />
+  <text x="120" y="810" style="font:700 14px 'Segoe UI', Arial, sans-serif; fill:#ffffff;">3</text>
+  <text x="160" y="792" class="section" style="font-size:17px; fill:#8f5810;">Race Layer</text>
+  <text x="160" y="815" class="body">Species/race ownership: innate stats, race defaults, spawn templates, race-based modifiers.</text>
+  <text x="160" y="833" class="body">Khong om mood, tech, housing, diplomacy; cac phan do thuoc Civilization hoac Conflict.</text>
+
+  <rect x="92" y="866" width="776" height="88" rx="18" fill="#e9f4ff" stroke="#5a9ad8" stroke-width="1.2" />
+  <circle cx="126" cy="910" r="18" fill="#347dcb" />
+  <text x="120" y="916" style="font:700 14px 'Segoe UI', Arial, sans-serif; fill:#ffffff;">4</text>
+  <text x="160" y="898" class="section" style="font-size:17px; fill:#195f9f;">Civilization Layer</text>
+  <text x="160" y="921" class="body">Economy, buildings, citizens, mood, hunger, rest, social climate, faith economy, tech, settlement pressure.</text>
+  <text x="160" y="939" class="body">Day la noi phan lon nghiep vu colony dang song, duoc tach khoi `Game` de UI chi con doc selectors.</text>
+
+  <rect x="92" y="972" width="776" height="88" rx="18" fill="#ffece6" stroke="#d07d5d" stroke-width="1.2" />
+  <circle cx="126" cy="1016" r="18" fill="#bf5f39" />
+  <text x="120" y="1022" style="font:700 14px 'Segoe UI', Arial, sans-serif; fill:#ffffff;">5</text>
+  <text x="160" y="1004" class="section" style="font-size:17px; fill:#9a4021;">Conflict Layer</text>
+  <text x="160" y="1027" class="body">War state, diplomacy, raid spawning, peace/war transitions, inter-faction pressure and combat orchestration.</text>
+  <text x="160" y="1045" class="body">AI gods chi dua ra intent; layer nay moi xu ly mutating conflict flow.</text>
+
+  <line x1="480" y1="454" x2="480" y2="548" stroke="#90a4b7" stroke-width="1.6" stroke-dasharray="5 5" />
+  <line x1="480" y1="636" x2="480" y2="654" stroke="#90a4b7" stroke-width="1.6" />
+  <line x1="480" y1="742" x2="480" y2="760" stroke="#90a4b7" stroke-width="1.6" />
+  <line x1="480" y1="848" x2="480" y2="866" stroke="#90a4b7" stroke-width="1.6" />
+  <line x1="480" y1="954" x2="480" y2="972" stroke="#90a4b7" stroke-width="1.6" />
+
+  <rect x="72" y="990" width="392" height="78" rx="18" fill="#f7f4ff" stroke="#b09ad8" stroke-width="1" />
+  <text x="92" y="1018" class="small">Shared Data</text>
+  <text x="92" y="1044" class="label">WorldState</text>
+  <text x="92" y="1061" class="body">`clock`, `world`, `factions`, `story`, `pendingCommands`.</text>
+
+  <rect x="496" y="990" width="392" height="78" rx="18" fill="#f7fbf6" stroke="#9fb89b" stroke-width="1" />
+  <text x="516" y="1018" class="small">Adapters</text>
+  <text x="516" y="1044" class="label">Existing Managers</text>
+  <text x="516" y="1061" class="body">Terrain, CreatureManager, BuildingManager, TechTree, GodPowers, GodManager.</text>
+
+  <rect x="72" y="462" width="816" height="58" rx="16" fill="#f3f8fd" stroke="#9fb7cf" stroke-width="1" />
+  <text x="92" y="489" class="small">Story Layer</text>
+  <text x="92" y="512" class="label">EventSystem / Storyteller</text>
+  <text x="285" y="512" class="body">Doc selectors de chon event theo pressure, roi day command vao dispatch thay vi mutate truc tiep.</text>
+
+  <line x1="252" y1="454" x2="252" y2="462" stroke="#bf9b47" stroke-width="1.8" marker-end="url(#arrow)" />
+  <line x1="708" y1="454" x2="708" y2="462" stroke="#c46f83" stroke-width="1.8" marker-end="url(#arrow)" />
+
+  <text x="48" y="1038" class="note">Current code direction: module-based simulation shell with state container and adapters. Khong claim ECS/Web Worker da xong.</text>
+</svg>

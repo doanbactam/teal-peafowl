@@ -14,7 +14,7 @@ const EVENTS = [
     execute(game) {
       let affected = 0;
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human' && Math.random() < 0.35) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && Math.random() < 0.35) {
           c.plagued = true;
           c.plagueTimer = 0;
           affected++;
@@ -34,7 +34,7 @@ const EVENTS = [
     execute(game) {
       game.resources.food = Math.max(0, game.resources.food - 30);
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human') {
+        if (c.alive && c.type === 'human' && c.faction === 0) {
           c.hunger += 30;
           if (c.addMoodModifier) c.addMoodModifier('Famine', -10, 30);
         }
@@ -144,7 +144,7 @@ const EVENTS = [
     execute(game) {
       game.resources.food += 40;
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human' && c.addMoodModifier) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && c.addMoodModifier) {
           c.addMoodModifier('Good harvest', 5, 20);
         }
       }
@@ -166,7 +166,7 @@ const EVENTS = [
         const tx = Math.round(halfSize + (Math.random() - 0.5) * 20);
         const tz = Math.round(halfSize + (Math.random() - 0.5) * 20);
         if (game.terrain.isWalkable(tx, tz)) {
-          game.creatureManager.spawnHuman(tx, tz);
+          game.creatureManager.spawnHuman(tx, tz, 0, game.playerRace);
           spawned++;
         }
       }
@@ -222,7 +222,7 @@ const EVENTS = [
     execute(game) {
       game.resources.faith += 30;
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human' && c.addMoodModifier) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && c.addMoodModifier) {
           c.addMoodModifier('Divine Favor', 8, 30);
         }
       }
@@ -293,7 +293,7 @@ const EVENTS = [
     execute(game) {
       let affected = 0;
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human' && Math.random() < 0.25) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && Math.random() < 0.25) {
           c.madness = true;
           c.madnessTimer = 0;
           if (c.bodyMesh) c.bodyMesh.material.color.setHex(0x880000);
@@ -313,7 +313,7 @@ const EVENTS = [
     minPop: 4,
     execute(game) {
       for (const c of game.creatureManager.creatures) {
-        if (c.alive && c.type === 'human' && c.addMoodModifier) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && c.addMoodModifier) {
           c.addMoodModifier('Solar Eclipse', -8, 40);
         }
       }
@@ -343,7 +343,7 @@ const EVENTS = [
         const tx = Math.round(halfSize + (Math.random() - 0.5) * 20);
         const tz = Math.round(halfSize + (Math.random() - 0.5) * 20);
         if (game.terrain.isWalkable(tx, tz)) {
-          const refugee = game.creatureManager.spawnHuman(tx, tz);
+          const refugee = game.creatureManager.spawnHuman(tx, tz, 0, game.playerRace);
           if (refugee) {
             refugee.health = refugee.maxHealth * 0.4;
             refugee.hunger = 60;
@@ -404,6 +404,70 @@ const EVENTS = [
       return true;
     }
   },
+  // ===== PRODUCTION & TRADE EVENTS =====
+  {
+    id: 'iron_discovery',
+    name: 'Iron Discovery',
+    icon: '⛓️',
+    type: 'success',
+    message: 'Rich <b>iron deposits</b> found! +15 iron.',
+    weight: 3,
+    minPop: 4,
+    execute(game) {
+      game.resources.iron = (game.resources.iron || 0) + 15;
+      return true;
+    }
+  },
+  {
+    id: 'merchant_guild',
+    name: 'Merchant Guild',
+    icon: '🏪',
+    type: 'success',
+    message: 'A <b>merchant guild</b> visits! +10 goods, +15 gold.',
+    weight: 2,
+    minPop: 8,
+    execute(game) {
+      game.resources.goods = (game.resources.goods || 0) + 10;
+      game.resources.gold += 15;
+      return true;
+    }
+  },
+  // ===== WAR EVENTS =====
+  {
+    id: 'soldiers_sacrifice',
+    name: "Soldier's Sacrifice",
+    icon: '🎖️',
+    type: 'warning',
+    message: 'A <b>brave soldier</b> falls in battle. The people gain faith and resolve.',
+    weight: 2,
+    minPop: 8,
+    execute(game) {
+      game.resources.faith += 20;
+      for (const c of game.creatureManager.creatures) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && c.addMoodModifier) {
+          c.addMoodModifier('Honored Sacrifice', 8, 25);
+        }
+      }
+      return true;
+    }
+  },
+  {
+    id: 'pyrrhic_victory',
+    name: 'Pyrrhic Victory',
+    icon: '⚔️',
+    type: 'warning',
+    message: 'Victory won at a <b>terrible cost</b>. Morale wavers despite success.',
+    weight: 1,
+    minPop: 10,
+    execute(game) {
+      for (const c of game.creatureManager.creatures) {
+        if (c.alive && c.type === 'human' && c.faction === 0 && c.addMoodModifier) {
+          c.addMoodModifier('Pyrrhic Victory', -6, 40);
+        }
+      }
+      return true;
+    }
+  },
 ];
 
 export class EventSystem {
@@ -416,6 +480,122 @@ export class EventSystem {
     this.notificationContainer = null;
 
     this.createNotificationContainer();
+  }
+
+  buildWorldState() {
+    if (this.game.simulation) {
+      return this.game.simulation.select('storytellerState', { faction: 0 });
+    }
+
+    const metrics = this.game.getSettlementMetrics(0);
+    return {
+      ...metrics,
+      faith: this.game.resources.faith,
+      gold: this.game.resources.gold,
+      food: this.game.resources.food,
+      day: this.game.day,
+      isNight: this.game.gameTime >= 20 || this.game.gameTime < 6,
+      plaguedCount: 0,
+      injuredCount: 0,
+      averageMood: 50,
+      animalCount: this.game.creatureManager.getAnimalCount(),
+    };
+  }
+
+  isEventEligible(event, state) {
+    if (state.pop < event.minPop) {
+      return false;
+    }
+
+    const lastTime = [...this.eventHistory].reverse().find((entry) => entry.event === event.id);
+    if (lastTime && this.game.day - lastTime.day < 4) {
+      return false;
+    }
+
+    switch (event.id) {
+      case 'plague':
+        return state.temples < Math.max(2, state.pop / 4) && state.plaguedCount < Math.ceil(state.pop * 0.2);
+      case 'famine':
+        return state.foodPerCitizen < 14 && state.farms > 0;
+      case 'wildfire':
+        return state.fireTiles < 8;
+      case 'bandit_raid':
+        return state.pop >= 8 && (state.gold > 15 || state.wealth > 140);
+      case 'gold_rush':
+        return state.mines > 0 || state.gold < 40;
+      case 'bountiful_harvest':
+        return state.farms > 0;
+      case 'wanderers':
+        return state.spareBeds >= 2;
+      case 'trade_caravan':
+        return state.storage > 0 && !state.isNight;
+      case 'animal_migration':
+        return state.animalCount < 18;
+      case 'divine_favor':
+        return state.temples > 0 || state.faith < 120;
+      case 'solar_eclipse':
+        return !state.isNight;
+      case 'refugee_crisis':
+        return state.spareBeds >= 2;
+      case 'iron_discovery':
+        return (game?.buildingManager?.getCountByType('mine', 0) || 0) > 0;
+      case 'merchant_guild':
+        return (game?.buildingManager?.getCountByType('market', 0) || 0) > 0;
+      case 'soldiers_sacrifice':
+        return state.pop >= 8 && state.averageMood > 40;
+      case 'pyrrhic_victory':
+        return state.pop >= 10 && state.averageMood < 50;
+      default:
+        return true;
+    }
+  }
+
+  getEventWeight(event, state) {
+    let weight = event.weight;
+
+    switch (event.id) {
+      case 'plague':
+        weight *= state.injuredCount > 0 ? 1.4 : 0.8;
+        break;
+      case 'famine':
+        weight *= state.foodPerCitizen < 8 ? 2.1 : 0.7;
+        break;
+      case 'wildfire':
+        weight *= state.isNight ? 0.55 : 1.25;
+        break;
+      case 'bandit_raid':
+        weight *= state.gold > 25 ? 1.6 : 1;
+        break;
+      case 'gold_rush':
+        weight *= state.mines > 0 ? 1.5 : 0.8;
+        break;
+      case 'bountiful_harvest':
+        weight *= state.farms > 1 ? 1.8 : 0.9;
+        break;
+      case 'wanderers':
+        weight *= state.spareBeds > 4 ? 1.7 : 1;
+        break;
+      case 'trade_caravan':
+        weight *= state.storage > 0 ? 1.6 : 0.8;
+        break;
+      case 'animal_migration':
+        weight *= state.animalCount < 10 ? 1.8 : 0.9;
+        break;
+      case 'divine_favor':
+        weight *= state.temples > 0 ? 1.5 : 0.75;
+        break;
+      case 'refugee_crisis':
+        weight *= state.spareBeds > 3 ? 1.4 : 0.8;
+        break;
+      default:
+        break;
+    }
+
+    if (this.eventHistory.slice(-3).some((entry) => entry.event === event.id)) {
+      weight *= 0.35;
+    }
+
+    return weight;
   }
 
   createNotificationContainer() {
@@ -449,19 +629,20 @@ export class EventSystem {
       this.timer = 0;
       this.lastEventDay = this.game.day;
 
-      const pop = this.game.creatureManager.getPopulationCount();
+      const state = this.buildWorldState();
+      const pop = state.pop;
 
       // Filter eligible events
-      const eligible = EVENTS.filter(e => pop >= e.minPop);
+      const eligible = EVENTS.filter((event) => this.isEventEligible(event, state));
       if (eligible.length === 0) return;
 
       // RimWorld-inspired storyteller: balance events based on prosperity
       // If colony is doing well → more danger events, if struggling → more success events
-      const isProsperous = pop > 15 && this.game.resources.food > 50 && this.game.resources.gold > 20;
-      const isStruggling = pop < 5 || this.game.resources.food < 10;
+      const isProsperous = pop > 10 && state.food > 40 && state.gold > 20;
+      const isStruggling = pop < 5 || state.foodPerCitizen < 8;
 
       let weightedEvents = eligible.map(e => {
-        let weight = e.weight;
+        let weight = this.getEventWeight(e, state);
         if (isProsperous && e.type === 'danger') weight *= 1.5;
         if (isStruggling && e.type === 'success') weight *= 2;
         if (isStruggling && e.type === 'danger') weight *= 0.5;
@@ -482,7 +663,9 @@ export class EventSystem {
       }
 
       // Execute event
-      const success = selected.execute(this.game);
+      const success = this.game.simulation
+        ? this.game.simulation.dispatch({ type: 'story.runEvent', eventId: selected.id })
+        : selected.execute(this.game);
       if (success) {
         this.showNotification(selected);
         this.eventHistory.push({

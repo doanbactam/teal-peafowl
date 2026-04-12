@@ -29,12 +29,18 @@ export const RACES = {
       id: 'adaptability',
       name: 'Adaptability',
       description: 'Gains 20% more experience from all sources.',
+      expBonus: 1.2
     },
     factionAffinity: 0,
     namePool: [
       'Aelin', 'Brom', 'Cira', 'Dax', 'Elara',
       'Finn', 'Gwen', 'Holt', 'Iris', 'Joss',
     ],
+    societal: {
+      ideologyBase: { militarism: 10, piety: 10, prosperity: 25 },
+      satisfaction: { baseBonus: 5, warPenaltyMult: 1.0, rebelThreshold: 25 },
+      diplomacy: { baseRelations: 0, decayMult: 1.0 }
+    },
   },
 
   [RACE_IDS.LIZARDMAN]: {
@@ -52,12 +58,18 @@ export const RACES = {
       id: 'scale_armor',
       name: 'Scale Armor',
       description: 'Takes 15% less physical damage from all sources.',
+      damageTakenMult: 0.85
     },
     factionAffinity: 1,
     namePool: [
       'Sszark', 'Krazil', 'Tixan', 'Vressh', 'Zkalon',
       'Hesskar', 'Ixzin', 'Drassil', 'Kryvax', 'Tzonar',
     ],
+    societal: {
+      ideologyBase: { militarism: 15, piety: 20, prosperity: 10 },
+      satisfaction: { baseBonus: 0, warPenaltyMult: 0.8, rebelThreshold: 20 },
+      diplomacy: { baseRelations: -10, decayMult: 1.2 }
+    },
   },
 
   [RACE_IDS.NYX]: {
@@ -75,12 +87,18 @@ export const RACES = {
       id: 'shadow_step',
       name: 'Shadow Step',
       description: '25% chance to completely dodge incoming attacks.',
+      dodgeBonus: 0.25
     },
     factionAffinity: 4,
     namePool: [
       'Vyranth', 'Xilantha', 'Dravoss', 'Melissae', 'Nyxara',
       'Phaelan', 'Shyrrin', 'Thessaly', 'Umbrix', 'Zyranna',
     ],
+    societal: {
+      ideologyBase: { militarism: 10, piety: 35, prosperity: 5 },
+      satisfaction: { baseBonus: -5, warPenaltyMult: 1.2, rebelThreshold: 30 },
+      diplomacy: { baseRelations: -15, decayMult: 1.5 }
+    },
   },
 
   [RACE_IDS.FROGMAN]: {
@@ -98,12 +116,18 @@ export const RACES = {
       id: 'amphibious',
       name: 'Amphibious',
       description: 'Moves 30% faster when near water tiles.',
+      waterSpeedBonus: 1.3
     },
     factionAffinity: 2,
     namePool: [
       'Keroak', 'Ribbix', 'Gloop', 'Muddok', 'Wartok',
       'Croakus', 'Tadrius', 'Swampkin', 'Puddle', 'Bogdan',
     ],
+    societal: {
+      ideologyBase: { militarism: 5, piety: 15, prosperity: 20 },
+      satisfaction: { baseBonus: 10, warPenaltyMult: 1.5, rebelThreshold: 15 },
+      diplomacy: { baseRelations: 10, decayMult: 0.8 }
+    },
   },
 
   [RACE_IDS.GNOLL]: {
@@ -121,12 +145,19 @@ export const RACES = {
       id: 'pack_tactics',
       name: 'Pack Tactics',
       description: '+5 attack for each nearby ally (max +15).',
+      allyDamageBoost: 5,
+      maxAllyBoost: 15
     },
     factionAffinity: 3,
     namePool: [
       'Gnashrak', 'Vorrak', 'Skraal', 'Hrakkor', 'Zevrish',
       'Bruxa', 'Krazgul', 'Yennik', 'Drothar', 'Murgash',
     ],
+    societal: {
+      ideologyBase: { militarism: 25, piety: 5, prosperity: 15 },
+      satisfaction: { baseBonus: -10, warPenaltyMult: 0.7, rebelThreshold: 35 },
+      diplomacy: { baseRelations: -20, decayMult: 1.3 }
+    },
   },
 
   [RACE_IDS.ORC]: {
@@ -144,12 +175,19 @@ export const RACES = {
       id: 'brutal_force',
       name: 'Brutal Force',
       description: '20% chance to deal double damage on each attack.',
+      critChance: 0.20,
+      critMult: 2.0
     },
     factionAffinity: 1,
     namePool: [
       'Grommash', 'Tharok', 'Durgash', 'Kargan', 'Uzgrel',
       'Morbosh', 'Shagrath', 'Ruzgoth', 'Azkhar', 'Bolgash',
     ],
+    societal: {
+      ideologyBase: { militarism: 40, piety: 5, prosperity: 5 },
+      satisfaction: { baseBonus: -15, warPenaltyMult: 0.4, rebelThreshold: 40 },
+      diplomacy: { baseRelations: -30, decayMult: 1.8 }
+    },
   },
 };
 

@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GodBox - God Simulator</title>
   <meta name="description" content="GodBox - A god simulation game inspired by WorldBox and RimWorld. Shape worlds, guide civilizations, and wield divine powers." />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./node_modules/three/build/three.module.js",
+        "three/addons/": "./node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -30,8 +38,46 @@
       <div class="hud-stat"><span class="stat-icon">🪨</span><span id="stat-stone">0</span></div>
       <div class="hud-stat"><span class="stat-icon">✨</span><span id="stat-gold">0</span></div>
       <div class="hud-stat" style="color: #ba68c8; border-color: rgba(186,104,200,0.3); background: rgba(186,104,200,0.05);"><span class="stat-icon">🔮</span><span id="stat-faith">0</span></div>
+      <div class="hud-stat" style="color: #78909c; border-color: rgba(120,144,156,0.3); background: rgba(120,144,156,0.05);"><span class="stat-icon">⛓️</span><span id="stat-iron">0</span></div>
+      <div class="hud-stat" style="color: #8d6e63; border-color: rgba(141,110,99,0.3); background: rgba(141,110,99,0.05);"><span class="stat-icon">📦</span><span id="stat-goods">0</span></div>
       <button id="btn-speed" class="hud-btn" title="Game Speed">⏩ x1</button>
+      <button id="btn-diplomacy" class="hud-btn" title="Diplomacy">🏛️</button>
+      <button id="btn-heroes" class="hud-btn" title="Heroes">⭐</button>
     </div>
+  </div>
+
+  <div id="colony-pressure-panel" aria-live="polite">
+    <div class="pressure-panel-header">
+      <span class="pressure-kicker">Colony Pressure</span>
+      <span id="pressure-overview-badge" class="pressure-overview-badge calm">Calm</span>
+    </div>
+    <div class="pressure-grid">
+      <div class="pressure-card" data-pressure-level="calm">
+        <div class="pressure-card-top">
+          <span class="pressure-icon">🍖</span>
+          <span class="pressure-name">Food</span>
+          <span id="pressure-food-level" class="pressure-level">Stable</span>
+        </div>
+        <div id="pressure-food-detail" class="pressure-detail">Stores are steady.</div>
+      </div>
+      <div class="pressure-card" data-pressure-level="calm">
+        <div class="pressure-card-top">
+          <span class="pressure-icon">🏠</span>
+          <span class="pressure-name">Shelter</span>
+          <span id="pressure-shelter-level" class="pressure-level">Stable</span>
+        </div>
+        <div id="pressure-shelter-detail" class="pressure-detail">Beds cover the colony.</div>
+      </div>
+      <div class="pressure-card" data-pressure-level="calm">
+        <div class="pressure-card-top">
+          <span class="pressure-icon">🫀</span>
+          <span class="pressure-name">Stability</span>
+          <span id="pressure-stability-level" class="pressure-level">Stable</span>
+        </div>
+        <div id="pressure-stability-detail" class="pressure-detail">People are holding together.</div>
+      </div>
+    </div>
+    <div id="pressure-summary" class="pressure-summary">Choose a domain to found your colony.</div>
   </div>
 
   <!-- Left Power Panel -->
@@ -128,10 +174,37 @@
     </div>
   </div>
 
-  <!-- Bottom Info Panel -->
-  <div id="info-panel">
-    <div id="info-content">
-      <span id="info-text">Welcome to GodBox! Use the powers on the left to shape your world. Inspired by WorldBox & RimWorld.</span>
+  <!-- Diplomacy Panel -->
+  <div id="diplomacy-panel" class="diplomacy-panel hidden">
+    <div class="diplomacy-header">
+      <span>🏛️ DIPLOMACY</span>
+      <button id="diplomacy-close" class="tech-close-btn">✕</button>
+    </div>
+    <div id="diplomacy-content" class="diplomacy-content">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <!-- Hero Panel -->
+  <div id="hero-panel" class="hero-panel hidden">
+    <div class="hero-header">
+      <span>⭐ HEROES</span>
+      <button id="hero-close" class="tech-close-btn">✕</button>
+    </div>
+    <div id="hero-content" class="hero-content">
+      <div class="hero-empty">No heroes yet. Heroes emerge from battle victories.</div>
+    </div>
+  </div>
+
+  <!-- Advanced Inspector Panel (RimWorld style) -->
+  <div id="inspector-panel" class="hidden">
+    <div class="inspector-header">
+      <div id="inspector-title">Inspector</div>
+      <button id="inspector-close">✕</button>
+    </div>
+    <div id="inspector-content">
+      <!-- Populated by JS -->
+      <div class="inspector-placeholder">Select a creature or building</div>
     </div>
   </div>
 

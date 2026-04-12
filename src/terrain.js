@@ -44,14 +44,23 @@ export class Terrain {
     this.scene = scene
     this.size = WORLD_SIZE
     this.tiles = new Map()
+    this.landMap = new Uint8Array(this.size * this.size)
+    this.coastDistanceMap = new Float32Array(this.size * this.size)
+    this.latitudeMap = new Float32Array(this.size * this.size)
     this.heightMap = new Float32Array(this.size * this.size)
     this.moistureMap = new Float32Array(this.size * this.size)
     this.temperatureMap = new Float32Array(this.size * this.size)
     this.biomeMap = new Uint8Array(this.size * this.size)
+    this.riverMap = new Uint8Array(this.size * this.size)
+    this.riverDistanceMap = new Uint8Array(this.size * this.size)
     this.onFire = new Map()
     this.trees = new Map()
     this.decorations = new Map()
     this.burningMeshes = new Map()
+    this.riverSourceCount = 0
+    this.riverTileCount = 0
+
+    this.riverDistanceMap.fill(255)
 
     this.generate()
     this.buildMesh()
@@ -74,6 +83,9 @@ export class Terrain {
 
         const land = isLand(lon, lat)
         const distToCoast = getDistanceToCoast(lon, lat)
+        this.landMap[idx] = land ? 1 : 0
+        this.coastDistanceMap[idx] = distToCoast
+        this.latitudeMap[idx] = lat
 
         let height
 
@@ -135,23 +147,56 @@ export class Terrain {
         }
         moisture = Math.max(0, Math.min(1, moisture))
         this.moistureMap[idx] = moisture
+      }
+    }
 
-        // Determine biome
+    this.generateRivers()
+    this.generateResources()
+
+    for (let z = 0; z < this.size; z++) {
+      for (let x = 0; x < this.size; x++) {
+        const idx = z * this.size + x
+        const height = this.heightMap[idx]
+        let moisture = this.moistureMap[idx]
+        const temp = this.temperatureMap[idx]
+        const lat = this.latitudeMap[idx]
+        const land = this.landMap[idx] === 1
+        const distToCoast = this.coastDistanceMap[idx]
+        const riverStrength = this.riverMap[idx]
+        const riverDistanceRaw = this.riverDistanceMap[idx]
+        const riverDistance = riverDistanceRaw === 255 ? null : riverDistanceRaw
+
+        if (land && riverDistance !== null) {
+          const bankBonus = Math.max(0, 0.26 - riverDistance * 0.055)
+          const channelBonus = riverStrength > 0 ? 0.07 + riverStrength * 0.03 : 0
+          moisture = Math.max(0, Math.min(1, moisture + bankBonus + channelBonus))
+          this.moistureMap[idx] = moisture
+        }
+
         const biome = this.getBiome(height, moisture, temp, lat, land, distToCoast)
         this.biomeMap[idx] = biome
 
-        // Store tile data
+        const baseFertility = moisture * temp * (height > 0.3 ? 1 : 0)
+        const riverFertilityBonus = riverDistance === null ? 0 : Math.max(0, 0.24 - riverDistance * 0.05)
+
         this.tiles.set(`${x},${z}`, {
-          x, z,
+          x,
+          z,
           height,
           moisture,
           temperature: temp,
           biome,
+          river: riverStrength > 0,
+          riverStrength,
+          riverDistance,
           hasTree: false,
           hasBuilding: false,
+          hasStone: false,
+          hasIron: false,
+          hasGold: false,
           onFire: false,
           fireTicks: 0,
-          fertility: moisture * temp * (height > 0.3 ? 1 : 0),
+          fertility: Math.max(0, Math.min(1.6, baseFertility + riverFertilityBonus)),
         })
       }
     }
@@ -164,6 +209,7 @@ export class Terrain {
         const biome = this.biomeMap[idx]
         const tile = this.tiles.get(`${x},${z}`)
         if (!tile) continue
+        if (tile.river) continue
 
         const val = (treeNoise.noise2D(x * 0.6, z * 0.6) + 1) * 0.5
 
@@ -183,9 +229,207 @@ export class Terrain {
           // Very sparse small trees
           if (val < 0.03) tile.hasTree = true
         }
+
+        if (!tile.hasTree && tile.riverDistance !== null && tile.riverDistance <= 1) {
+          if (biome === BIOME.GRASSLAND && val < 0.14) tile.hasTree = true
+          if (biome === BIOME.SAVANNA && val < 0.18) tile.hasTree = true
+          if (biome === BIOME.FOREST && val < 0.42) tile.hasTree = true
+          if (biome === BIOME.DENSE_FOREST && val < 0.68) tile.hasTree = true
+        }
         // No trees in DESERT, BEACH, MOUNTAIN, SNOW, SNOW_PEAK, water
       }
     }
+  }
+
+  generateRivers() {
+    this.riverMap.fill(0)
+    this.riverDistanceMap.fill(255)
+    this.riverSourceCount = 0
+    this.riverTileCount = 0
+
+    const candidates = []
+    for (let z = 4; z < this.size - 4; z++) {
+      for (let x = 4; x < this.size - 4; x++) {
+        const idx = z * this.size + x
+        if (!this.landMap[idx]) continue
+
+        const height = this.heightMap[idx]
+        const moisture = this.moistureMap[idx]
+        const distToCoast = this.coastDistanceMap[idx]
+        if (height < 0.66 || distToCoast < 18 || moisture < 0.22) continue
+
+        const score = height * 0.62 + moisture * 0.18 + Math.min(1, distToCoast / 40) * 0.2
+        const noiseJitter = ((Math.sin(x * 11.17 + z * 7.31) + 1) * 0.5) * 0.08
+        candidates.push({ x, z, score: score + noiseJitter })
+      }
+    }
+
+    candidates.sort((a, b) => b.score - a.score)
+
+    const chosenSources = []
+    const maxSources = 20
+    const minSpacing = 18
+
+    for (const candidate of candidates) {
+      if (chosenSources.length >= maxSources) break
+
+      const tooClose = chosenSources.some(source => {
+        const dx = source.x - candidate.x
+        const dz = source.z - candidate.z
+        return dx * dx + dz * dz < minSpacing * minSpacing
+      })
+      if (tooClose) continue
+
+      const path = this.traceRiver(candidate.x, candidate.z)
+      if (path.length < 12) continue
+
+      this.commitRiverPath(path)
+      chosenSources.push(candidate)
+    }
+
+    this.riverSourceCount = chosenSources.length
+    this.updateRiverDistanceMap()
+  }
+
+  traceRiver(startX, startZ) {
+    const path = []
+    const visited = new Set()
+    let x = startX
+    let z = startZ
+    let steps = 0
+    let reachedOutlet = false
+
+    while (steps < this.size) {
+      const idx = z * this.size + x
+      if (visited.has(idx)) break
+      visited.add(idx)
+      path.push([x, z])
+
+      const currentDist = this.coastDistanceMap[idx]
+      if (currentDist <= 1.5) {
+        reachedOutlet = true
+        break
+      }
+
+      const next = this.findRiverStep(x, z, visited)
+      if (!next) break
+
+      if (!next.land || next.coastDistance <= 1.5) {
+        path.push([next.x, next.z])
+        reachedOutlet = true
+        break
+      }
+
+      x = next.x
+      z = next.z
+      steps++
+    }
+
+    return reachedOutlet ? path : []
+  }
+
+  findRiverStep(x, z, visited) {
+    const idx = z * this.size + x
+    const currentHeight = this.heightMap[idx]
+    const currentCoastDistance = this.coastDistanceMap[idx]
+    let best = null
+    let bestScore = -Infinity
+
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) continue
+
+        const nx = x + dx
+        const nz = z + dz
+        if (nx < 0 || nz < 0 || nx >= this.size || nz >= this.size) continue
+
+        const nIdx = nz * this.size + nx
+        if (visited.has(nIdx)) continue
+
+        const land = this.landMap[nIdx] === 1
+        const neighborHeight = this.heightMap[nIdx]
+        const coastDistance = this.coastDistanceMap[nIdx]
+        const downhill = currentHeight - neighborHeight
+        const coastPull = currentCoastDistance - coastDistance
+        const diagonalPenalty = dx !== 0 && dz !== 0 ? 0.012 : 0
+        const reusePenalty = this.riverMap[nIdx] > 0 ? 0.035 : 0
+        const score = downhill * 1.55 + coastPull * 0.09 - diagonalPenalty - reusePenalty
+
+        if (!land) {
+          return { x: nx, z: nz, land: false, coastDistance }
+        }
+
+        if (score > bestScore) {
+          bestScore = score
+          best = { x: nx, z: nz, land: true, coastDistance }
+        }
+      }
+    }
+
+    return best
+  }
+
+  commitRiverPath(path) {
+    if (path.length < 2) return
+
+    const mouthStart = Math.floor(path.length * 0.72)
+    const midStart = Math.floor(path.length * 0.35)
+
+    for (let i = 0; i < path.length; i++) {
+      const [x, z] = path[i]
+      const idx = z * this.size + x
+      if (!this.landMap[idx]) continue
+
+      const strength = i >= mouthStart ? 3 : i >= midStart ? 2 : 1
+      this.riverMap[idx] = Math.max(this.riverMap[idx], strength)
+
+      const floor = this.coastDistanceMap[idx] < 4 ? 0.31 : 0.34
+      const carve = strength === 3 ? 0.03 : strength === 2 ? 0.022 : 0.014
+      this.heightMap[idx] = Math.max(floor, this.heightMap[idx] - carve)
+    }
+  }
+
+  updateRiverDistanceMap() {
+    const queue = []
+    let riverTiles = 0
+
+    this.riverDistanceMap.fill(255)
+
+    for (let i = 0; i < this.riverMap.length; i++) {
+      if (this.riverMap[i] > 0 && this.landMap[i]) {
+        this.riverDistanceMap[i] = 0
+        queue.push(i)
+        riverTiles++
+      }
+    }
+
+    for (let head = 0; head < queue.length; head++) {
+      const idx = queue[head]
+      const dist = this.riverDistanceMap[idx]
+      if (dist >= 4) continue
+
+      const x = idx % this.size
+      const z = Math.floor(idx / this.size)
+      const neighbors = [
+        [x - 1, z],
+        [x + 1, z],
+        [x, z - 1],
+        [x, z + 1],
+      ]
+
+      for (const [nx, nz] of neighbors) {
+        if (nx < 0 || nz < 0 || nx >= this.size || nz >= this.size) continue
+
+        const nIdx = nz * this.size + nx
+        if (!this.landMap[nIdx]) continue
+        if (this.riverDistanceMap[nIdx] <= dist + 1) continue
+
+        this.riverDistanceMap[nIdx] = dist + 1
+        queue.push(nIdx)
+      }
+    }
+
+    this.riverTileCount = riverTiles
   }
 
   getBiome(height, moisture, temp, lat, land, distToCoast) {
@@ -261,6 +505,8 @@ export class Terrain {
     this.tileMeshes = {}
     const dummy = new THREE.Object3D()
     const color = new THREE.Color()
+    const riverColor = new THREE.Color(0x4db6e5)
+    const riverbankColor = new THREE.Color(0x6fcf97)
 
     for (const [biomeStr, count] of Object.entries(biomeCounts)) {
       const biome = parseInt(biomeStr)
@@ -293,6 +539,15 @@ export class Terrain {
             Math.max(0, Math.min(1, g + v * 0.8)),
             Math.max(0, Math.min(1, b + v * 0.6 - heightShift))
           )
+
+          const riverStrength = this.riverMap[idx]
+          const riverDistance = this.riverDistanceMap[idx]
+          if (riverStrength > 0 && biome !== BIOME.DEEP_WATER && biome !== BIOME.SHALLOW_WATER) {
+            const riverBlend = 0.35 + riverStrength * 0.12
+            color.lerp(riverColor, riverBlend)
+          } else if (riverDistance < 3 && biome !== BIOME.DEEP_WATER && biome !== BIOME.SHALLOW_WATER) {
+            color.lerp(riverbankColor, (3 - riverDistance) * 0.08)
+          }
           mesh.setColorAt(instanceIdx, color)
 
           instanceIdx++
@@ -305,11 +560,104 @@ export class Terrain {
       this.tileMeshes[biome] = mesh
     }
 
+    this.buildRivers()
+
     // Add trees
     this.buildTrees()
 
     // Add decorations
     this.buildDecorations()
+  }
+
+  buildRivers() {
+    if (this._riverMesh) this.scene.remove(this._riverMesh)
+
+    const riverTiles = []
+    for (let z = 0; z < this.size; z++) {
+      for (let x = 0; x < this.size; x++) {
+        const idx = z * this.size + x
+        if (this.riverMap[idx] > 0 && this.landMap[idx]) {
+          riverTiles.push({ x, z, strength: this.riverMap[idx] })
+        }
+      }
+    }
+
+    if (riverTiles.length === 0) {
+      this._riverMesh = null
+      return
+    }
+
+    const halfSize = this.size / 2
+    const riverGeo = new THREE.BoxGeometry(0.7, 0.04, 0.7)
+    const riverMat = new THREE.MeshStandardMaterial({
+      color: 0x4fc3f7,
+      emissive: 0x123a54,
+      emissiveIntensity: 0.4,
+      roughness: 0.2,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.88,
+    })
+    const riverIM = new THREE.InstancedMesh(riverGeo, riverMat, riverTiles.length)
+    riverIM.castShadow = false
+    riverIM.receiveShadow = false
+
+    const dummy = new THREE.Object3D()
+    const color = new THREE.Color()
+
+    for (let i = 0; i < riverTiles.length; i++) {
+      const { x, z, strength } = riverTiles[i]
+      const idx = z * this.size + x
+      const height = this.heightMap[idx] * 3
+      const flow = this.getRiverFlowVector(x, z)
+      const rotation = Math.atan2(flow.x, flow.z)
+      const width = 0.34 + strength * 0.08
+      const length = 0.72 + strength * 0.18
+
+      dummy.position.set(x - halfSize, height + 0.025, z - halfSize)
+      dummy.rotation.set(0, rotation, 0)
+      dummy.scale.set(width, 1, length)
+      dummy.updateMatrix()
+      riverIM.setMatrixAt(i, dummy.matrix)
+
+      color.setHex(strength >= 3 ? 0x80d8ff : strength === 2 ? 0x5ec8f4 : 0x35a8de)
+      riverIM.setColorAt(i, color)
+    }
+
+    riverIM.instanceMatrix.needsUpdate = true
+    if (riverIM.instanceColor) riverIM.instanceColor.needsUpdate = true
+    this.scene.add(riverIM)
+    this._riverMesh = riverIM
+  }
+
+  getRiverFlowVector(x, z) {
+    let vx = 0
+    let vz = 0
+    const idx = z * this.size + x
+    const currentHeight = this.heightMap[idx]
+
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) continue
+
+        const nx = x + dx
+        const nz = z + dz
+        if (nx < 0 || nz < 0 || nx >= this.size || nz >= this.size) continue
+
+        const nIdx = nz * this.size + nx
+        if (this.riverMap[nIdx] === 0) continue
+
+        const drop = currentHeight - this.heightMap[nIdx]
+        const weight = this.riverMap[nIdx] + Math.max(0.2, drop * 12)
+        vx += dx * weight
+        vz += dz * weight
+      }
+    }
+
+    if (vx === 0 && vz === 0) return { x: 0, z: 1 }
+
+    const length = Math.hypot(vx, vz) || 1
+    return { x: vx / length, z: vz / length }
   }
 
   buildTrees() {
@@ -472,6 +820,89 @@ export class Terrain {
     }
   }
 
+  
+  generateResources() {
+    const stoneNoise = new SimplexNoise(101);
+    const ironNoise = new SimplexNoise(202);
+    const goldNoise = new SimplexNoise(303);
+
+    for (let z = 0; z < this.size; z++) {
+      for (let x = 0; x < this.size; x++) {
+        const tile = this.tiles.get(`${x},${z}`);
+        if (!tile || !this.landMap[z * this.size + x] || tile.biome === BIOME.BEACH || tile.river || tile.hasTree) continue;
+
+        if (tile.height > 0.45) {
+          const sv = stoneNoise.noise2D(x * 0.08, z * 0.08);
+          if (sv > 0.55) tile.hasStone = true;
+
+          const iv = ironNoise.noise2D(x * 0.12, z * 0.12);
+          if (iv > 0.70) tile.hasIron = true;
+
+          const gv = goldNoise.noise2D(x * 0.18, z * 0.18);
+          if (gv > 0.82 && tile.height > 0.55) tile.hasGold = true;
+          
+          // Ensure only one resource type per tile
+          if (tile.hasGold) { tile.hasIron = false; tile.hasStone = false; }
+          else if (tile.hasIron) { tile.hasStone = false; }
+        }
+      }
+    }
+  }
+
+  buildResources() {
+    if (this._resourceMeshes) {
+      this._resourceMeshes.forEach(m => this.scene.remove(m));
+    }
+    this._resourceMeshes = [];
+
+    const nodes = { stone: [], iron: [], gold: [] };
+
+    for (let z = 0; z < this.size; z++) {
+      for (let x = 0; x < this.size; x++) {
+        const tile = this.tiles.get(`${x},${z}`);
+        if (!tile) continue;
+        if (tile.hasGold) nodes.gold.push(tile);
+        else if (tile.hasIron) nodes.iron.push(tile);
+        else if (tile.hasStone) nodes.stone.push(tile);
+      }
+    }
+
+    const rockGeo = new THREE.DodecahedronGeometry(0.2, 0); // Low poly rock
+    const dummy = new THREE.Object3D();
+    const halfSize = this.size / 2;
+
+    const materials = {
+      stone: new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.9, flatShading: true }),
+      iron: new THREE.MeshStandardMaterial({ color: 0x995544, roughness: 0.8, metalness: 0.3, flatShading: true }),
+      gold: new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.4, metalness: 0.8, flatShading: true }),
+    };
+
+    for (const [type, tileList] of Object.entries(nodes)) {
+      if (tileList.length === 0) continue;
+      
+      const mesh = new THREE.InstancedMesh(rockGeo, materials[type], tileList.length);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      for (let i = 0; i < tileList.length; i++) {
+        const tile = tileList[i];
+        const px = tile.x - halfSize;
+        const pz = tile.z - halfSize;
+        const py = tile.height * 3;
+
+        dummy.position.set(px, py, pz);
+        const s = 0.8 + Math.random() * 0.6;
+        dummy.scale.set(s, s * 0.7, s);
+        dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      this.scene.add(mesh);
+      this._resourceMeshes.push(mesh);
+    }
+  }
+
   buildDecorations() {
     // Remove old decoration meshes
     if (this._rockIM) this.scene.remove(this._rockIM)
@@ -491,7 +922,7 @@ export class Terrain {
     for (let z = 0; z < this.size; z += 4) {
       for (let x = 0; x < this.size; x += 4) {
         const tile = this.tiles.get(`${x},${z}`)
-        if (!tile || tile.hasTree || tile.hasBuilding) continue
+        if (!tile || tile.hasTree || tile.hasBuilding || tile.river) continue
 
         const val = (decoNoise.noise2D(x * 0.3, z * 0.3) + 1) * 0.5
 
@@ -729,6 +1160,9 @@ export class Terrain {
           ctx.fillStyle = `rgb(255, ${Math.floor(100 + Math.random() * 100)}, 0)`
         } else if (tile && tile.hasBuilding) {
           ctx.fillStyle = '#999'
+        } else if (tile && tile.river) {
+          const riverShade = tile.riverStrength >= 3 ? 225 : tile.riverStrength === 2 ? 205 : 185
+          ctx.fillStyle = `rgb(48, ${riverShade}, 255)`
         } else {
           ctx.fillStyle = `rgb(${Math.floor(r*255)},${Math.floor(g*255)},${Math.floor(b*255)})`
         }
@@ -739,6 +1173,34 @@ export class Terrain {
           Math.ceil(scaleZ * step)
         )
       }
+    }
+  }
+
+  getDebugSnapshot() {
+    const sampleRiverTiles = []
+
+    for (let z = 0; z < this.size && sampleRiverTiles.length < 6; z++) {
+      for (let x = 0; x < this.size && sampleRiverTiles.length < 6; x++) {
+        const tile = this.tiles.get(`${x},${z}`)
+        if (tile?.river) {
+          sampleRiverTiles.push({
+            x,
+            z,
+            strength: tile.riverStrength,
+            moisture: Number(tile.moisture.toFixed(2)),
+            fertility: Number(tile.fertility.toFixed(2)),
+          })
+        }
+      }
+    }
+
+    return {
+      size: this.size,
+      rivers: {
+        sources: this.riverSourceCount,
+        tiles: this.riverTileCount,
+        sample: sampleRiverTiles,
+      },
     }
   }
 }

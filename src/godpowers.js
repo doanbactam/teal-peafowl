@@ -38,16 +38,37 @@ export class GodPowers {
   }
 
   execute(worldX, worldZ) {
+    if (this.activePower === 'select') {
+      return this.applyPower(this.activePower, worldX, worldZ, {
+        chargeFaith: false,
+        trackIntervention: false,
+      });
+    }
+
+    if (this.game.simulation) {
+      return this.game.simulation.dispatch({
+        type: 'god.castPower',
+        powerId: this.activePower,
+        worldX,
+        worldZ,
+        faction: 0,
+      });
+    }
+
+    return this.applyPower(this.activePower, worldX, worldZ);
+  }
+
+  applyPower(powerId, worldX, worldZ, options = {}) {
     const terrain = this.game.terrain;
     const creatures = this.game.creatureManager;
-    const buildings = this.game.buildingManager;
-    const resources = this.game.resources;
+    const chargeFaith = options.chargeFaith !== false;
+    const trackIntervention = options.trackIntervention !== false;
 
     const halfSize = terrain.size / 2;
     const tileX = Math.round(worldX + halfSize);
     const tileZ = Math.round(worldZ + halfSize);
 
-    const cost = this.getCost(this.activePower);
+    const cost = this.getCost(powerId);
 
     // Apply theology discount if researched
     let finalCost = cost;
@@ -55,7 +76,7 @@ export class GodPowers {
        finalCost = Math.floor(cost * 0.7);
     }
 
-    if (this.game.resources.faith < finalCost) {
+    if (chargeFaith && this.game.resources.faith < finalCost) {
       this.game.eventSystem.showNotification({
         type: 'warning',
         icon: '🔮',
@@ -66,7 +87,7 @@ export class GodPowers {
 
     let result = false;
 
-    switch (this.activePower) {
+    switch (powerId) {
       case 'select':
         result = this.select(tileX, tileZ);
         if (result) return result; // Return info directly
@@ -110,8 +131,16 @@ export class GodPowers {
         break;
     }
 
-    if (result && finalCost > 0) {
+    if (result && chargeFaith && finalCost > 0) {
        this.game.resources.faith -= finalCost;
+    }
+
+    if (result && trackIntervention) {
+      if (this.game.simulation) {
+        this.game.simulation.dispatch({ type: 'god.intervention', powerId, success: true });
+      } else {
+        this.game.registerDivineIntervention(powerId, true);
+      }
     }
     
     return result;
@@ -129,12 +158,16 @@ export class GodPowers {
     // Show tile info
     const tile = this.game.terrain.tiles.get(`${tileX},${tileZ}`);
     if (tile) {
-      const biomeNames = ['Deep Water','Shallow Water','Beach','Grassland','Forest','Dense Forest','Mountain','Snow','Desert','Savanna'];
+      const biomeNames = ['Deep Water','Shallow Water','Beach','Grassland','Forest','Dense Forest','Mountain','Snow','Desert','Savanna','Tundra','Tropical Forest','Snow Peak'];
+      const riverLabel = tile.river ? `River (strength ${tile.riverStrength})` : (tile.riverDistance !== null && tile.riverDistance <= 2 ? `Near river bank (${tile.riverDistance})` : 'No');
       return {
         type: 'info',
         data: `<b>Tile (${tileX}, ${tileZ})</b><br>` +
           `Biome: ${biomeNames[tile.biome]}<br>` +
           `Height: ${tile.height.toFixed(2)}<br>` +
+          `Moisture: ${tile.moisture.toFixed(2)}<br>` +
+          `Fertility: ${tile.fertility.toFixed(2)}<br>` +
+          `Waterway: ${riverLabel}<br>` +
           `Tree: ${tile.hasTree ? 'Yes' : 'No'}<br>` +
           `Fire: ${tile.onFire ? '🔥 Yes' : 'No'}`
       };

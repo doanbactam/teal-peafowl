@@ -11,9 +11,11 @@ function setupUI(game) {
       const power = btn.dataset.power;
       game.godPowers.setActive(power);
 
-      // Update info
-      document.getElementById('info-text').textContent =
-        `Selected: ${btn.querySelector('.power-name').textContent}`;
+      // Clear inspector when selecting a new tool
+      const inspectorContent = document.getElementById('inspector-content');
+      if (inspectorContent) {
+          inspectorContent.innerHTML = `<div class="inspector-placeholder">Tool selected: ${btn.querySelector('.power-name').textContent}</div>`;
+      }
 
       // Change cursor style based on power
       const canvas = game.renderer.domElement;
@@ -21,8 +23,15 @@ function setupUI(game) {
         canvas.style.cursor = 'default';
       } else {
         canvas.style.cursor = 'crosshair';
+        // Hide inspector when switching tools
+        document.getElementById('inspector-panel').classList.add('hidden');
       }
     });
+  });
+
+  // Close inspector
+  document.getElementById('inspector-close').addEventListener('click', () => {
+    document.getElementById('inspector-panel').classList.add('hidden');
   });
 
   // Speed button
@@ -56,7 +65,8 @@ function setupUI(game) {
     const tile = game.terrain.tiles.get(`${tx},${tz}`);
     if (tile) {
       const biomeNames = ['Deep Water','Shallow Water','Beach','Grassland','Forest','Dense Forest','Mountain','Snow','Desert','Savanna','Tundra','Tropical Forest','Snow Peak'];
-      minimap.title = `(${tx}, ${tz}) ${biomeNames[tile.biome]}`;
+      const riverTag = tile.river ? ' • River' : (tile.riverDistance !== null && tile.riverDistance <= 2 ? ' • Riverbank' : '');
+      minimap.title = `(${tx}, ${tz}) ${biomeNames[tile.biome]}${riverTag}`;
     }
   });
 }
@@ -82,6 +92,27 @@ function updateMinimap(game) {
 
     // Redraw terrain first to clear old dots
     game.terrain.drawMinimap(canvas);
+
+    // Draw Faction Territories (WorldBox style)
+    const factionColors = [
+      'rgba(66, 165, 245, 0.4)',  // Blue
+      'rgba(239, 83, 80, 0.4)',   // Red
+      'rgba(102, 187, 106, 0.4)', // Green
+      'rgba(255, 167, 38, 0.4)',  // Orange
+      'rgba(171, 71, 188, 0.4)'   // Purple
+    ];
+    if (game.buildingManager && game.buildingManager.buildings) {
+      for (const building of game.buildingManager.buildings.values()) {
+        const mx = building.x * scaleX;
+        const mz = building.z * scaleZ;
+        const radius = 8 * scaleX; // Territory size
+        
+        ctx.fillStyle = factionColors[building.faction % factionColors.length] || 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.arc(mx, mz, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     for (const creature of game.creatureManager.creatures) {
       if (!creature.alive) continue;
@@ -128,6 +159,17 @@ const loading = showLoading();
 // Small delay to show loading screen
 setTimeout(() => {
   const game = new Game();
+  window.__gameDebug = {
+    game,
+    get terrain() {
+      return game.terrain.getDebugSnapshot();
+    },
+  };
+  window.render_game_to_text = () => JSON.stringify({
+    day: game.day,
+    paused: game.paused,
+    terrain: game.terrain.getDebugSnapshot(),
+  });
   setupUI(game);
   updateMinimap(game);
 

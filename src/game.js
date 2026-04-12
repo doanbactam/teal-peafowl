@@ -11,6 +11,8 @@ import { createWater, createStars, createClouds, createAmbientParticles } from '
 import { GodManager } from './gods.js';
 import { getRace, RACE_IDS } from './races.js';
 import { getDomain, DOMAIN_IDS } from './domains.js';
+import { TechTree } from './technology.js';
+import { WorldSimulation } from './simulation/worldSimulation.js';
 
 export class Game {
   constructor() {
@@ -18,11 +20,11 @@ export class Game {
 
     // Resources
     this.resources = {
-      wood: 80,
-      food: 50,
-      stone: 40,
-      gold: 15,
-      faith: 100,
+      wood: 600,
+      food: 800,
+      stone: 300,
+      gold: 150,
+      faith: 100, iron: 0, goods: 0,
     };
 
     // Time
@@ -46,12 +48,30 @@ export class Game {
       totalDays: 0,
     };
 
+    this.initialWildlifeSpawned = false;
+    this.playerSettlementSpawned = false;
+
+    // Seasonal system
+    this.season = 'spring';
+    this.seasonTimer = 0;
+    this.seasonDuration = 10; // days per season
+    this.seasonEffects = { farmMult: 1.0, moodMod: 0, freezeChance: 0, droughtChance: 0 };
+
+    // Social climate shaped by divine intervention.
+    this.socialClimate = {
+      trust: 10,
+      fear: 0,
+      strain: 0,
+      lastPower: null,
+    };
+
     this.init();
   }
 
   init() {
     // Scene
     this.scene = new THREE.Scene();
+    this.scene.userData.game = this;
     this.scene.background = new THREE.Color(0x0a0a1e);
     this.scene.fog = new THREE.FogExp2(0x0a0a1e, 0.003);
 
@@ -116,6 +136,12 @@ export class Game {
     // Event system
     this.eventSystem = new EventSystem(this);
 
+    // Technology progression
+    this.techTree = new TechTree(this);
+
+    // Simulation shell around the existing managers/state.
+    this.simulation = new WorldSimulation(this);
+
     // God system (will be initialized after domain selection)
     this.godManager = null;
     this.playerRace = RACE_IDS.HUMAN;
@@ -144,14 +170,18 @@ export class Game {
     // Ground plane for raycasting
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-    // Spawn initial creatures
-    this.spawnInitialCreatures();
+    // Spawn wildlife first. The player's settlement is founded after domain selection.
+    this.spawnInitialWildlife();
 
     // Events
     this.setupEvents();
+    this.setupNewPanels();
 
     // Update camera position
     this.updateCameraPosition();
+
+    this.paused = true;
+    this.showDomainSelection();
 
     // Start loop
     this.clock = new THREE.Clock();
@@ -256,6 +286,8 @@ export class Game {
   selectDomain(domainId) {
     this.playerDomain = domainId;
     this.domainSelected = true;
+    this.simulation.syncStateFromGame();
+    this.paused = false;
 
     // Remove overlay
     const overlay = document.getElementById('domain-select-overlay');
@@ -264,6 +296,7 @@ export class Game {
     // Initialize god system
     this.godManager = new GodManager(this);
     this.godManager.init(this.playerRace, this.playerDomain);
+    this.simulation.syncStateFromGame();
 
     // Show notification
     const domain = getDomain(domainId);
@@ -278,11 +311,15 @@ export class Game {
   }
 
   spawnInitialCreatures() {
+    if (this.playerSettlementSpawned) {
+      return;
+    }
+
     const halfSize = this.terrain.size / 2;
 
     if (this.godManager) {
       // God system: player creatures at center
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 20; i++) {
         const angle = (i / 8) * Math.PI * 2;
         const dist = 8 + Math.random() * 10;
         const tx = Math.round(halfSize + Math.cos(angle) * dist);
@@ -291,16 +328,21 @@ export class Game {
           this.creatureManager.spawnHuman(tx, tz, 0, this.playerRace);
         }
       }
-      // Initial buildings for player
-      if (this.buildingManager.canBuild(halfSize, halfSize, 'house')) {
-        this.buildingManager.build(halfSize, halfSize, 'house', this.resources);
+      const houseSpot = this.findNearbyBuildSite(halfSize, halfSize, 'house', 5);
+      if (houseSpot) {
+        this.buildingManager.build(houseSpot.x, houseSpot.z, 'house', this.resources, 0);
       }
-      if (this.buildingManager.canBuild(halfSize + 2, halfSize, 'farm')) {
-        this.buildingManager.build(halfSize + 2, halfSize, 'farm', this.resources);
+      const farmSpot = this.findNearbyBuildSite(halfSize, halfSize, 'farm', 8);
+      if (farmSpot) {
+        this.buildingManager.build(farmSpot.x, farmSpot.z, 'farm', this.resources, 0);
+      }
+      const storageSpot = this.findNearbyBuildSite(halfSize, halfSize, 'storage', 6);
+      if (storageSpot) {
+        this.buildingManager.build(storageSpot.x, storageSpot.z, 'storage', this.resources, 0);
       }
     } else {
       // Fallback: original spawning (backward compatible)
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 30; i++) {
         const angle = (i / 12) * Math.PI * 2;
         const dist = 15 + Math.random() * 20;
         const tx = Math.round(halfSize + Math.cos(angle) * dist);
@@ -323,13 +365,154 @@ export class Game {
       }
     }
 
-    // Animals always spawn across map
+    this.playerSettlementSpawned = true;
+  }
+
+  spawnInitialWildlife() {
+    if (this.initialWildlifeSpawned) {
+      return;
+    }
+
+    const halfSize = this.terrain.size / 2;
+
     for (let i = 0; i < 10; i++) {
       const tx = Math.round(halfSize + (Math.random() - 0.5) * 120);
       const tz = Math.round(halfSize + (Math.random() - 0.5) * 120);
       if (this.terrain.isWalkable(tx, tz)) {
         this.creatureManager.spawnAnimal(tx, tz);
       }
+    }
+
+    this.initialWildlifeSpawned = true;
+  }
+
+  findNearbyBuildSite(centerX, centerZ, type, radius = 6) {
+    for (let attempts = 0; attempts < 40; attempts++) {
+      const tx = centerX + Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+      const tz = centerZ + Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+      if (this.buildingManager.canBuild(tx, tz, type)) {
+        return { x: tx, z: tz };
+      }
+    }
+
+    return null;
+  }
+
+  getFactionGod(faction = 0) {
+    return this.simulation.select('factionGod', { faction });
+  }
+
+  getFactionRaceId(faction = 0) {
+    return this.simulation.select('factionRaceId', { faction });
+  }
+
+  getFactionDomainId(faction = 0) {
+    return this.simulation.select('factionDomainId', { faction });
+  }
+
+  getFactionPassiveEffects(faction = 0) {
+    return this.simulation.select('factionPassiveEffects', { faction });
+  }
+
+  getFactionPopulation(faction = 0) {
+    return this.simulation.select('factionPopulation', { faction });
+  }
+
+  countBurningTiles() {
+    return this.simulation.selectors.countBurningTiles();
+  }
+
+  getSettlementMetrics(faction = 0) {
+    return this.simulation.select('settlementMetrics', { faction });
+  }
+
+  getPlayerHumans(faction = 0) {
+    return this.simulation.select('playerHumans', { faction });
+  }
+
+  getSocialMetrics(faction = 0) {
+    return this.simulation.select('socialMetrics', { faction });
+  }
+
+  getDomainPowerDisposition(powerId, domainId = this.playerDomain) {
+    return this.simulation.select('domainPowerDisposition', { powerId, domainId });
+  }
+
+  registerDivineIntervention(powerId, success = true) {
+    return this.simulation.dispatch({ type: 'god.intervention', powerId, success });
+  }
+
+  updateSocialClimate(dt) {
+    return this.simulation.civilizationLayer.updateSocialClimate(dt);
+  }
+
+  getFaithEconomy(faction = 0) {
+    return this.simulation.select('faithEconomy', { faction });
+  }
+
+  getPressureLevel(score) {
+    if (score >= 85) return 'crisis';
+    if (score >= 60) return 'danger';
+    if (score >= 30) return 'watch';
+    return 'calm';
+  }
+
+  getPressureLabel(level) {
+    if (level === 'crisis') return 'Crisis';
+    if (level === 'danger') return 'Danger';
+    if (level === 'watch') return 'Watch';
+    return 'Stable';
+  }
+
+  getOverviewLabel(level) {
+    if (level === 'crisis') return 'Critical';
+    if (level === 'danger') return 'Unstable';
+    if (level === 'watch') return 'Strained';
+    return 'Calm';
+  }
+
+  getColonyDiagnostics(faction = 0) {
+    return this.simulation.select('colonyDiagnostics', { faction });
+  }
+
+  updateColonyPressurePanel() {
+    const panel = document.getElementById('colony-pressure-panel');
+    if (!panel) {
+      return;
+    }
+
+    const diagnostics = this.getColonyDiagnostics(0);
+    const cards = panel.querySelectorAll('.pressure-card');
+    const entries = [
+      { id: 'food', card: cards[0] },
+      { id: 'shelter', card: cards[1] },
+      { id: 'stability', card: cards[2] },
+    ];
+
+    for (const entry of entries) {
+      const pressure = diagnostics[entry.id];
+      if (entry.card) {
+        entry.card.dataset.pressureLevel = pressure.level;
+      }
+      const levelEl = document.getElementById(`pressure-${entry.id}-level`);
+      const detailEl = document.getElementById(`pressure-${entry.id}-detail`);
+      if (levelEl) {
+        levelEl.textContent = pressure.label;
+      }
+      if (detailEl) {
+        detailEl.textContent = pressure.detail;
+      }
+    }
+
+    const badge = document.getElementById('pressure-overview-badge');
+    if (badge) {
+      badge.className = `pressure-overview-badge ${diagnostics.overview.level}`;
+      badge.textContent = diagnostics.overview.label;
+    }
+
+    const summaryEl = document.getElementById('pressure-summary');
+    if (summaryEl) {
+      summaryEl.textContent = diagnostics.overview.summary;
     }
   }
 
@@ -533,8 +716,16 @@ export class Game {
     if (!worldPos) return;
 
     const result = this.godPowers.execute(worldPos.x, worldPos.z);
+    
+    const panel = document.getElementById('inspector-panel');
+    const content = document.getElementById('inspector-content');
+    
     if (result && result.type === 'info') {
-      document.getElementById('info-text').innerHTML = result.data;
+      panel.classList.remove('hidden');
+      content.innerHTML = result.data;
+    } else if (this.godPowers.activePower === 'select') {
+      panel.classList.add('hidden');
+      content.innerHTML = '<div class="inspector-placeholder">Select a creature or building</div>';
     }
   }
 
@@ -544,6 +735,120 @@ export class Game {
     this.gameSpeed = speeds[(idx + 1) % speeds.length];
     const btn = document.getElementById('btn-speed');
     btn.textContent = `⏩ x${this.gameSpeed}`;
+  }
+
+  setupNewPanels() {
+    // Diplomacy panel toggle
+    const diploBtn = document.getElementById('btn-diplomacy');
+    const diploPanel = document.getElementById('diplomacy-panel');
+    const diploClose = document.getElementById('diplomacy-close');
+    if (diploBtn && diploPanel) {
+      diploBtn.addEventListener('click', () => {
+        diploPanel.classList.toggle('hidden');
+        if (!diploPanel.classList.contains('hidden')) {
+          this.updateDiplomacyPanel();
+        }
+      });
+      if (diploClose) {
+        diploClose.addEventListener('click', () => diploPanel.classList.add('hidden'));
+      }
+    }
+
+    // Hero panel toggle
+    const heroBtn = document.getElementById('btn-heroes');
+    const heroPanel = document.getElementById('hero-panel');
+    const heroClose = document.getElementById('hero-close');
+    if (heroBtn && heroPanel) {
+      heroBtn.addEventListener('click', () => {
+        heroPanel.classList.toggle('hidden');
+        if (!heroPanel.classList.contains('hidden')) {
+          this.updateHeroPanel();
+        }
+      });
+      if (heroClose) {
+        heroClose.addEventListener('click', () => heroPanel.classList.add('hidden'));
+      }
+    }
+  }
+
+  updateDiplomacyPanel() {
+    const content = document.getElementById('diplomacy-content');
+    if (!content || !this.godManager) return;
+
+    const gods = this.godManager.gods;
+    const playerFaction = 0;
+    let html = '';
+
+    for (const god of gods) {
+      if (god.isPlayer) continue;
+      const diplo = this.simulation.select('diplomacyState', { factionA: playerFaction, factionB: god.faction });
+      const warState = this.simulation.select('warState', { factionA: playerFaction, factionB: god.faction });
+      const relScore = diplo?.relations ?? 0;
+      const status = diplo?.status || 'neutral';
+
+      const barWidth = Math.abs(relScore) / 2;
+      const barClass = relScore >= 0 ? 'positive' : 'negative';
+      const barStyle = relScore >= 0
+        ? 'left: 50%; width: ' + barWidth + '%'
+        : 'right: 50%; width: ' + barWidth + '%; left: auto';
+
+      html += '<div class="diplomacy-faction-row">';
+      html += '<span class="diplomacy-faction-name" style="color:' + this.getFactionColor(god.faction) + '">' + god.name + '</span>';
+      html += '<span class="diplomacy-status-badge ' + status + '">' + status.toUpperCase() + '</span>';
+      html += '<div class="diplomacy-relation-bar"><div class="diplomacy-relation-fill ' + barClass + '" style="' + barStyle + '"></div></div>';
+      html += '<span class="diplomacy-relation-score">' + (relScore >= 0 ? '+' : '') + Math.round(relScore) + '</span>';
+      html += '</div>';
+
+      if (diplo?.atWar && warState) {
+        html += '<div class="diplomacy-war-score" style="padding-left:12px;margin-bottom:8px;">⚔️ War Score: You ' + (warState.scoreA || 0) + ' vs ' + (warState.scoreB || 0) + ' ' + god.name + '</div>';
+      }
+    }
+
+    if (!html) html = '<div style="color:#546e7a;text-align:center;padding:20px">No other factions discovered.</div>';
+    content.innerHTML = html;
+  }
+
+  updateHeroPanel() {
+    const content = document.getElementById('hero-content');
+    if (!content) return;
+
+    const heroes = this.simulation.select('heroes', { faction: null }) || [];
+    if (heroes.length === 0) {
+      content.innerHTML = '<div class="hero-empty">No heroes yet. Heroes emerge from battle victories at level 5+.</div>';
+      return;
+    }
+
+    let html = '';
+    const profIcons = {
+      Warrior: '⚔️', Priest: '🙏', Hunter: '🏹', Builder: '🔨',
+      Miner: '⛏️', Farmer: '🌾', Villager: '🧑'
+    };
+
+    for (const hero of heroes) {
+      const icon = profIcons[hero.profession] || '⭐';
+      const hpPct = Math.floor((hero.health / hero.maxHealth) * 100);
+      const factionColor = this.getFactionColor(hero.faction);
+
+      html += '<div class="hero-card">';
+      html += '<div class="hero-card-icon">' + icon + '</div>';
+      html += '<div class="hero-card-info">';
+      html += '<div class="hero-card-name">' + hero.name + '</div>';
+      html += '<div class="hero-card-profession" style="color:' + factionColor + '">Lv.' + hero.level + ' ' + hero.profession + '</div>';
+      html += '<div class="hero-card-ability">✨ ' + hero.ability + '</div>';
+      html += '<div class="hero-card-stats">';
+      html += '<span class="hero-card-stat">❤️ ' + hpPct + '%</span>';
+      html += '<span class="hero-card-stat">📍 ' + hero.tileX + ',' + hero.tileZ + '</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    content.innerHTML = html;
+  }
+
+  getFactionColor(faction) {
+    const colors = ['#42a5f5', '#ef5350', '#66bb6a', '#ffa726', '#ab47bc'];
+    return colors[faction] || '#e0e0e0';
   }
 
   updateDayNight(dt) {
@@ -657,10 +962,15 @@ export class Game {
     this.renderer.toneMappingExposure = isDay ? 1.2 : 0.85; // Better exposure at night
   }
 
+  updateSeason() {
+    return this.simulation.worldLayer.updateSeason();
+  }
+
   updateHUD() {
-    const pop = this.creatureManager.getPopulationCount();
+    const pop = this.getFactionPopulation(0);
+    const buildingCount = [...this.buildingManager.buildings.values()].filter((building) => building.faction === 0).length;
     document.getElementById('stat-pop').textContent = pop;
-    document.getElementById('stat-buildings').textContent = this.buildingManager.getCount();
+    document.getElementById('stat-buildings').textContent = buildingCount;
     document.getElementById('stat-day').textContent = this.day;
 
     // Track highest pop
@@ -678,8 +988,42 @@ export class Game {
     document.getElementById('stat-food').textContent = Math.floor(this.resources.food);
     document.getElementById('stat-stone').textContent = Math.floor(this.resources.stone);
     document.getElementById('stat-gold').textContent = Math.floor(this.resources.gold);
+    const ironEl = document.getElementById('stat-iron');
+    if (ironEl) ironEl.textContent = Math.floor(this.resources.iron || 0);
+    const goodsEl = document.getElementById('stat-goods');
+    if (goodsEl) goodsEl.textContent = Math.floor(this.resources.goods || 0);
     if (document.getElementById('stat-faith')) {
       document.getElementById('stat-faith').textContent = Math.floor(this.resources.faith);
+      const faithStat = document.getElementById('stat-faith')?.parentElement;
+      if (faithStat) {
+        const climate = this.getFaithEconomy(0);
+        const trend = climate.rate > this.getFactionPopulation(0) * 0.14 ? 'high' : climate.rate < this.getFactionPopulation(0) * 0.08 ? 'low' : 'steady';
+        faithStat.title = `Faith ${trend}. Mood x${climate.moodFactor.toFixed(2)}, stability x${climate.stabilityFactor.toFixed(2)}, divine climate x${climate.climateFactor.toFixed(2)}.`;
+      }
+    }
+
+    // Season badge
+    let seasonEl = document.getElementById('season-badge');
+    if (!seasonEl) {
+      seasonEl = document.createElement('span');
+      seasonEl.id = 'season-badge';
+      const hudRight = document.querySelector('.hud-right');
+      if (hudRight) hudRight.appendChild(seasonEl);
+    }
+    const seasonIcons = { spring: '🌸', summer: '☀️', autumn: '🍂', winter: '❄️' };
+    seasonEl.className = `season-badge ${this.season}`;
+    seasonEl.textContent = `${seasonIcons[this.season]} ${this.season.charAt(0).toUpperCase() + this.season.slice(1)}`;
+
+    this.updateColonyPressurePanel();
+
+    // Update diplomacy and hero panels if visible
+    const diploPanel = document.getElementById('diplomacy-panel');
+    if (diploPanel && !diploPanel.classList.contains('hidden')) {
+      this.updateDiplomacyPanel();
+    }
+    const heroPanel = document.getElementById('hero-panel');
+    if (heroPanel && !heroPanel.classList.contains('hidden')) {
+      this.updateHeroPanel();
     }
   }
 
@@ -687,24 +1031,10 @@ export class Game {
     requestAnimationFrame(() => this.animate());
 
     const rawDt = this.clock.getDelta();
-    const clampedDt = Math.min(rawDt, 0.1);
-    const dt = this.paused ? 0 : clampedDt * this.gameSpeed;
 
     this.frameCount++;
 
-    // Update systems
-    this.updateDayNight(rawDt);
-
-    if (!this.paused) {
-      this.creatureManager.update(dt, this.buildingManager, this.resources, this.gameTime);
-      this.buildingManager.update(dt, this.resources);
-      this.terrain.updateFire(dt);
-      this.eventSystem.update(rawDt);
-
-      // Passive faith generation based on population
-      const pop = this.creatureManager.getPopulationCount();
-      this.resources.faith = Math.min(1000, this.resources.faith + dt * pop * 0.15);
-    }
+    this.simulation.update(rawDt);
     this.godPowers.update(rawDt);
 
     // Camera shake

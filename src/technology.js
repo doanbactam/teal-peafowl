@@ -5,11 +5,13 @@ export const AGES = {
   BRONZE: 1,
   IRON: 2,
   IMPERIAL: 3,
+  MYTHIC: 4,
+  TRANSCENDENT: 5,
 };
 
-const AGE_NAMES = ['Stone Age', 'Bronze Age', 'Iron Age', 'Imperial Age'];
-const AGE_COLORS = ['#9e9e9e', '#cd7f32', '#607d8b', '#ffd700'];
-const AGE_ICONS = ['🪨', '⚔️', '🛡️', '👑'];
+const AGE_NAMES = ['Stone Age', 'Bronze Age', 'Iron Age', 'Imperial Age', 'Mythic Age', 'Transcendent Age'];
+const AGE_COLORS = ['#9e9e9e', '#cd7f32', '#607d8b', '#ffd700', '#ba68c8', '#00bcd4'];
+const AGE_ICONS = ['🪨', '⚔️', '🛡️', '👑', '🔮', '🌌'];
 
 const TECHNOLOGIES = [
   // STONE AGE
@@ -189,6 +191,65 @@ const TECHNOLOGIES = [
     description: 'Temple heals all units, divine powers cost less',
     effects: { templeHealAll: true, divinePowerBoost: true },
     requires: ['philosophy'],
+  },
+
+  // MYTHIC AGE
+  {
+    id: 'mythic_materials',
+    name: 'Mythic Materials',
+    icon: '🔮',
+    age: AGES.MYTHIC,
+    cost: { stone: 200, gold: 100 },
+    researchTime: 40,
+    description: 'All humans +30 ATK, +15 DEF. Heroes become legendary.',
+    effects: { humanAttack: 30, humanDefense: 15, mythicHeroes: true },
+    requires: ['steel'],
+  },
+  {
+    id: 'divine_architecture',
+    name: 'Divine Architecture',
+    icon: '🏛️',
+    age: AGES.MYTHIC,
+    cost: { wood: 150, stone: 150, gold: 150 },
+    researchTime: 35,
+    description: 'Buildings +50% HP, Towers shoot faster.',
+    effects: { fortificationHP: 1.5, towerSpeed: 1.5 },
+    requires: ['engineering'],
+  },
+  {
+    id: 'planar_binding',
+    name: 'Planar Binding',
+    icon: '🌌',
+    age: AGES.MYTHIC,
+    cost: { gold: 200, faith: 100 },
+    researchTime: 40,
+    description: 'Temples generate 2x faith, unlocks planar summons.',
+    effects: { techFaithBoost: 2.0, planarSummons: true },
+    requires: ['theology'],
+  },
+
+  // TRANSCENDENT AGE
+  {
+    id: 'ascension',
+    name: 'Ascension',
+    icon: '🌟',
+    age: AGES.TRANSCENDENT,
+    cost: { gold: 500, faith: 300 },
+    researchTime: 60,
+    description: 'Humans become demi-gods. Massive health and damage boost.',
+    effects: { humanAttack: 50, humanDefense: 30, demiGods: true },
+    requires: ['planar_binding', 'mythic_materials'],
+  },
+  {
+    id: 'heavenly_forge',
+    name: 'Heavenly Forge',
+    icon: '⚒️',
+    age: AGES.TRANSCENDENT,
+    cost: { wood: 300, stone: 300, gold: 300 },
+    researchTime: 50,
+    description: 'Production buildings operate 3x faster.',
+    effects: { productionBoost: 3.0 },
+    requires: ['divine_architecture'],
   },
 ];
 
@@ -381,6 +442,8 @@ export class TechTree {
       { food: 100, wood: 80, stone: 50, gold: 30 },   // Bronze
       { food: 200, wood: 150, stone: 120, gold: 80 },  // Iron
       { food: 400, wood: 300, stone: 250, gold: 150 }, // Imperial
+      { food: 800, wood: 500, stone: 400, gold: 300, faith: 100 }, // Mythic
+      { food: 2000, wood: 1500, stone: 1000, gold: 800, faith: 400 }, // Transcendent
     ];
     return ageCosts[this.currentAge + 1] || null;
   }
@@ -393,7 +456,7 @@ export class TechTree {
   }
 
   canAdvanceAge() {
-    if (this.currentAge >= AGES.IMPERIAL) return false;
+    if (this.currentAge >= AGES.TRANSCENDENT) return false;
     
     const techReq = this.getAdvanceRequiredTechs();
     if (techReq.current < techReq.required) return false;
@@ -432,10 +495,14 @@ export class TechTree {
     // Age advancement bonuses
     for (const c of this.game.creatureManager.creatures) {
       if (c.alive && c.type === 'human') {
-        c.maxHealth += 20;
+        const hpBoost = this.currentAge >= AGES.MYTHIC ? 50 : 20;
+        const atkBoost = this.currentAge >= AGES.MYTHIC ? 15 : 5;
+        const defBoost = this.currentAge >= AGES.MYTHIC ? 10 : 3;
+
+        c.maxHealth += hpBoost;
         c.health = c.maxHealth;
-        c.attack += 5;
-        c.defense += 3;
+        c.attack += atkBoost;
+        c.defense += defBoost;
       }
     }
 
@@ -455,7 +522,7 @@ export class TechTree {
     const costEl = document.getElementById('tech-advance-cost');
     const nextAgeEl = document.getElementById('tech-next-age');
 
-    if (this.currentAge >= AGES.IMPERIAL) {
+    if (this.currentAge >= AGES.TRANSCENDENT) {
       btn.style.display = 'none';
       costEl.textContent = 'Maximum age reached!';
       return;
@@ -483,7 +550,7 @@ export class TechTree {
 
   update(dt) {
     if (this.researchQueue) {
-      this.researchQueue.progress += dt * this.game.gameSpeed;
+      this.researchQueue.progress += dt;
       
       const pct = Math.min(100, (this.researchQueue.progress / this.researchQueue.time) * 100);
       const bar = document.getElementById('tech-progress-bar');

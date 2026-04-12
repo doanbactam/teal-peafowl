@@ -305,19 +305,25 @@ export class BuildingManager {
   update(dt, resources) {
     for (const [key, building] of this.buildings) {
       building.ticks += dt;
-
+      let fRes = resources;
+      const game = this.scene.userData.game;
+      if (building.faction > 0 && game && game.godManager) {
+        const god = game.godManager.getGodByFaction(building.faction);
+        if (god) fRes = god.resources;
+      }
+      
       // Farms produce food
       if (building.foodProduction && building.ticks > 3) {
         building.ticks = 0;
-        resources.food += Math.ceil(building.foodProduction * 3);
+        fRes.food += Math.ceil(building.foodProduction * 3);
       }
 
       // Mines produce stone and gold
       if (building.stoneProduction && building.ticks > 4) {
         building.ticks = 0;
-        resources.stone += Math.ceil(building.stoneProduction * 4);
+        fRes.stone += Math.ceil(building.stoneProduction * 4);
         if (building.goldProduction) {
-          resources.gold += Math.ceil(building.goldProduction * 4);
+          fRes.gold += Math.ceil(building.goldProduction * 4);
         }
       }
 

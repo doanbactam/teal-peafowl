@@ -661,6 +661,13 @@ export class Creature {
   update(dt, creatures, buildings, resources, gameTime) {
     if (!this.alive) return;
 
+    let fRes = resources;
+    const game = this.scene.userData.game || null; // Avoid this.getGame() if it varies
+    if (this.faction > 0 && game && game.godManager) {
+      const god = game.godManager.getGodByFaction(this.faction);
+      if (god) fRes = god.resources;
+    }
+
     // Update hunger
     const hungerRate = this.getTraitEffect('hungerRate') || 1;
     this.hunger += dt * 0.4 * hungerRate;
@@ -825,19 +832,19 @@ export class Creature {
     // State machine
     switch (this.state) {
       case STATES.IDLE:
-        this.updateIdle(dt, creatures, buildings, resources, gameTime);
+        this.updateIdle(dt, creatures, buildings, fRes, gameTime);
         break;
       case STATES.MOVING:
         this.updateMoving(dt);
         break;
       case STATES.BUILDING:
-        this.updateBuildingState(dt, buildings, resources);
+        this.updateBuildingState(dt, buildings, fRes);
         break;
       case STATES.GATHERING:
-        this.updateGathering(dt, resources);
+        this.updateGathering(dt, fRes);
         break;
       case STATES.FIGHTING:
-        this.updateFighting(dt, resources);
+        this.updateFighting(dt, fRes);
         break;
       case STATES.FLEEING:
         this.updateFleeing(dt);
@@ -1739,20 +1746,8 @@ export class CreatureManager {
   tryReproduction(buildings, resources) {
     const pop = this.getPopulationCount();
     if (pop >= this.maxPopulation) return;
-    if (resources.food < 10) return;
 
-    // Count houses for population cap
-    let houseCap = 0;
-    if (buildings && buildings.buildings) {
-      for (const [, b] of buildings.buildings) {
-        if (b.type === 'house') houseCap += 4;
-      }
-    }
-
-    if (pop >= houseCap) return;
-
-    // Find pairs of same-faction humans near houses
-    const humans = this.creatures.filter(c => c.alive && c.type === 'human');
+    const humans = this.creatures.filter(c => c.alive && c.type === 'human' && c.faction !== 99);
     const factions = {};
     for (const h of humans) {
       if (!factions[h.faction]) factions[h.faction] = [];
@@ -1760,16 +1755,60 @@ export class CreatureManager {
     }
 
     for (const [faction, members] of Object.entries(factions)) {
-      if (members.length >= 2 && Math.random() < 0.3) {
-        // Spawn new human near one of the members
-        const parent = members[Math.floor(Math.random() * members.length)];
+      const factionId = parseInt(faction, 10);
+      let fRes = resources;
+      const game = this.scene.userData.game;
+      if (factionId > 0 && game && game.godManager) {
+        const god = game.godManager.getGodByFaction(factionId);
+        if (god) fRes = god.resources;
+      }
+
+      let housingCap = 0;
+      if (buildings && buildings.buildings) {
+        for (const building of buildings.buildings.values()) {
+          if (building.faction === factionId && building.type === 'house') {
+            housingCap += 4; // capacity per house
+          }
+        }
+      }
+
+      const factionPop = members.length;
+      if (factionPop >= housingCap) continue;
+
+      const adults = members.filter(
+        (member) => member.age >= 18 && member.age <= 55 && !member.plagued && member.health > member.maxHealth * 0.65,
+      );
+      if (adults.length < 2) continue;
+
+      const averageMood = adults.reduce((sum, member) => sum + member.mood, 0) / adults.length;
+      const spareBeds = housingCap - factionPop;
+      const foodSecurity = fRes.food / Math.max(20, factionPop * 2);
+
+      const birthChance = 0.05
+        + Math.min(0.20, spareBeds * 0.015)
+        + Math.min(0.12, Math.max(0, averageMood - 50) * 0.002)
+        + Math.min(0.10, Math.max(0, foodSecurity - 1) * 0.05);
+
+      if (fRes.food >= 12 && Math.random() < birthChance) {
+        const parent = adults[Math.floor(Math.random() * adults.length)];
         const tx = parent.tileX + Math.floor(Math.random() * 3 - 1);
         const tz = parent.tileZ + Math.floor(Math.random() * 3 - 1);
         if (this.terrain.isWalkable(tx, tz)) {
-          const child = this.spawnHuman(tx, tz, parseInt(faction));
+          const child = this.spawnHuman(tx, tz, factionId, parent.raceId);
           if (child) {
-            resources.food -= 5;
-            break; // Only one birth per cycle
+            child.age = 0;
+            child.hunger = 10;
+            child.restLevel = 75;
+            fRes.food = Math.max(0, fRes.food - 8);
+            parent.addMoodModifier('Family grew', 8, 30);
+            
+            if (factionId === 0 && game && game.eventSystem) {
+                game.eventSystem.showNotification({
+                    icon: '👶',
+                    type: 'info',
+                    message: `A new child was born in the colony! Population: ${factionPop + 1}/${housingCap}`
+                });
+            }
           }
         }
       }
