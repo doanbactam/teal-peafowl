@@ -390,10 +390,14 @@ export class DiplomacySystem {
 
                 s.loyalty = Math.max(0, Math.min(100, (s.loyalty || 100) + loyaltyChange));
 
-                // 3. Rebellion Check! (now factors in average happiness)
+                // 3. Rebellion Check! (now factors in average happiness + social stability)
                 const settlementUnits = entityManager.getBySettlement(s.id);
                 const avgHappiness = settlementUnits.reduce((sum, u) => sum + (u.happiness || 50), 0) / Math.max(1, settlementUnits.length);
-                if (gameState.worldLawsSystem.isEnabled('rebellions') && s.loyalty <= 0 && avgHappiness < 20 && Math.random() < 0.2) {
+                const socialStability = s.socialStability !== undefined ? s.socialStability : 50;
+                // Low social stability makes rebellions more likely
+                const rebellionThreshold = socialStability < 20 ? 0.35 : socialStability < 40 ? 0.25 : 0.2;
+                const happinessThreshold = socialStability < 30 ? 30 : 20; // Lower social stability = more tolerant of unhappiness for rebellion
+                if (gameState.worldLawsSystem.isEnabled('rebellions') && s.loyalty <= 0 && avgHappiness < happinessThreshold && Math.random() < rebellionThreshold) {
                     // Start Rebellion
                     const race = getRace(s.raceId);
                     const newKingdom = kingdomManager.create({

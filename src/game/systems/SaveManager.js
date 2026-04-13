@@ -100,7 +100,13 @@ export class SaveManager {
                 traits: entity.traits || [],
                 hunger: entity.hunger,
                 subspeciesId: entity.subspeciesId || null,
-                happiness: entity.happiness !== undefined ? entity.happiness : 50
+                happiness: entity.happiness !== undefined ? entity.happiness : 50,
+                // Social fields
+                spouseId: entity.spouseId || null,
+                familyId: entity.familyId || null,
+                parentIds: entity.parentIds || [],
+                children: entity.children || [],
+                generation: entity.generation || 1
             });
         }
 
@@ -220,6 +226,18 @@ export class SaveManager {
         const { historySystem } = gameState;
         if (historySystem && historySystem.getSaveData) {
             saveData.history = historySystem.getSaveData();
+        }
+
+        // Serialize social system
+        const { socialSystem } = gameState;
+        if (socialSystem && socialSystem.getSaveData) {
+            saveData.social = socialSystem.getSaveData();
+        }
+
+        // Serialize faith system
+        const { faithSystem } = gameState;
+        if (faithSystem && faithSystem.getSaveData) {
+            saveData.faith = faithSystem.getSaveData();
         }
 
         try {

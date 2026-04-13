@@ -152,7 +152,7 @@ export class ResourceSystem {
         }
 
         // Fishing: near water tiles
-        const waterTile = this.findResourceTile(worldMap, entity.tileX, entity.tileY, ['water', 'deep_water']);
+        const waterTile = this.findResourceTile(worldMap, entity.tileX, entity.tileY, ['shallow_water', 'deep_water']);
         if (waterTile) {
             entity.task = { type: 'gather_fish', target: waterTile };
             entity.state = 'moving';
@@ -186,6 +186,12 @@ export class ResourceSystem {
                 const avgHappiness = settlementUnits.reduce((sum, u) => sum + (u.happiness || 50), 0) / Math.max(1, settlementUnits.length);
                 const productivityMod = avgHappiness > 50 ? 1 + (avgHappiness - 50) / 200 : 0.5 + avgHappiness / 100;
                 amount = Math.max(1, Math.round(amount * productivityMod));
+
+                // Social cohesion affects productivity
+                if (settlement.socialCohesion !== undefined) {
+                    const socialMod = 1 + settlement.socialCohesion * 0.15; // +/-15% based on friend/rival ratio
+                    amount = Math.max(1, Math.round(amount * socialMod));
+                }
 
                 // AGE Impacts on active foraging/gathering
                 if (gameState.currentAgeId === 'ice' && task.type === 'gather_food') amount = 0;

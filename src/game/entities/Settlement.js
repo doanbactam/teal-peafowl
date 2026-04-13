@@ -77,7 +77,8 @@ export class SettlementManager {
             _id: id
         };
 
-        this.settlements.set(id, settlement);
+        // Use settlement.id (may differ from local id if props contained an id, e.g. during save/load)
+        this.settlements.set(settlement.id, settlement);
         return settlement;
     }
 

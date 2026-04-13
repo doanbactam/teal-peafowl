@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { generateAllSpriteTextures } from '../rendering/SpriteGenerator.js';
 
 export class PreloaderScene extends Phaser.Scene {
     constructor() {
@@ -38,11 +39,14 @@ export class PreloaderScene extends Phaser.Scene {
         barFill.fillRect(w / 2 - 158, h / 2 + 22, 316, 20);
 
         // Loading text
-        const loadText = this.add.text(w / 2, h / 2 + 60, 'Generating world...', {
+        const loadText = this.add.text(w / 2, h / 2 + 60, 'Generating sprites...', {
             fontFamily: 'monospace',
             fontSize: '14px',
             color: '#667788'
         }).setOrigin(0.5);
+
+        // Generate all pixel sprite textures
+        generateAllSpriteTextures(this);
 
         // Simulate a short loading delay, then go to menu
         this.time.delayedCall(800, () => {

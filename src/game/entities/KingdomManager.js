@@ -58,7 +58,8 @@ export class KingdomManager {
         } else if (!kingdom.culture || !kingdom.culture.id) {
             kingdom.culture = randomCulture();
         }
-        this.kingdoms.set(id, kingdom);
+        // Use kingdom.id (may differ from local id if props contained an id, e.g. during save/load)
+        this.kingdoms.set(kingdom.id, kingdom);
         return kingdom;
     }
 

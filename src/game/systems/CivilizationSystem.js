@@ -310,6 +310,13 @@ export class CivilizationSystem {
             const units = entityManager.getBySettlement(parentSettlement.id);
             for(let i=0; i<5 && i<units.length; i++) {
                 const u = units[i];
+                // Update bySettlement index
+                const oldSet = entityManager.bySettlement.get(parentSettlement.id);
+                if (oldSet) oldSet.delete(u.id);
+                if (!entityManager.bySettlement.has(colony.id)) {
+                    entityManager.bySettlement.set(colony.id, new Set());
+                }
+                entityManager.bySettlement.get(colony.id).add(u.id);
                 u.settlementId = colony.id;
                 u.tileX = colonyPos.x;
                 u.tileY = colonyPos.y;

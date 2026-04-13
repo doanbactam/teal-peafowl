@@ -111,7 +111,8 @@ export class AgeSystem {
     update(gameState, tick) {
         this.ticksInCurrentAge++;
         const currentAgeDef = this.getCurrentAge();
-        gameState.currentAgeId = this.currentAgeId;
+        // Store lowercase id so ResourceSystem/NatureSystem can match
+        gameState.currentAgeId = currentAgeDef.id;
 
         if (this.ticksInCurrentAge >= currentAgeDef.duration) {
             this.transitionNextAge(gameState);
@@ -142,46 +143,47 @@ export class AgeSystem {
         const { worldMap } = gameState;
 
         if (age.id === 'ice') {
-            this.randomTileEffect(worldMap, ['grass', 'forest'], 'snow', 10);
-            this.randomTileEffect(worldMap, ['shallow_water'], 'ice', 5);
+            this.randomTileEffect(worldMap, gameState, ['grass', 'forest'], 'snow', 10);
+            this.randomTileEffect(worldMap, gameState, ['shallow_water'], 'ice', 5);
         } else if (age.id === 'sun') {
-            this.randomTileEffect(worldMap, ['snow'], 'grass', 15);
-            this.randomTileEffect(worldMap, ['shallow_water'], 'sand', 2);
+            this.randomTileEffect(worldMap, gameState, ['snow'], 'grass', 15);
+            this.randomTileEffect(worldMap, gameState, ['shallow_water'], 'sand', 2);
         } else if (age.id === 'hope') {
-            this.randomTileEffect(worldMap, ['ice'], 'shallow_water', 20);
-            this.randomTileEffect(worldMap, ['snow'], 'grass', 20);
+            this.randomTileEffect(worldMap, gameState, ['ice'], 'shallow_water', 20);
+            this.randomTileEffect(worldMap, gameState, ['snow'], 'grass', 20);
         } else if (age.id === 'tears') {
             // Rain: convert sand to grass, create shallow water from dirt
-            this.randomTileEffect(worldMap, ['sand'], 'grass', 5);
-            this.randomTileEffect(worldMap, ['dirt'], 'shallow_water', 3);
+            this.randomTileEffect(worldMap, gameState, ['sand'], 'grass', 5);
+            this.randomTileEffect(worldMap, gameState, ['dirt'], 'shallow_water', 3);
         } else if (age.id === 'chaos') {
             // Random fires and lava
-            this.randomTileEffect(worldMap, ['grass', 'forest'], 'burned', 5);
-            this.randomTileEffect(worldMap, ['grass'], 'lava', 1);
+            this.randomTileEffect(worldMap, gameState, ['grass', 'forest'], 'burned', 5);
+            this.randomTileEffect(worldMap, gameState, ['grass'], 'lava', 1);
         } else if (age.id === 'ash') {
             // Ash covers everything
-            this.randomTileEffect(worldMap, ['grass', 'forest'], 'dirt', 8);
-            this.randomTileEffect(worldMap, ['snow'], 'dirt', 5);
+            this.randomTileEffect(worldMap, gameState, ['grass', 'forest'], 'dirt', 8);
+            this.randomTileEffect(worldMap, gameState, ['snow'], 'dirt', 5);
         } else if (age.id === 'despair') {
             // Even harsher than ice — kill vegetation
-            this.randomTileEffect(worldMap, ['grass'], 'snow', 12);
-            this.randomTileEffect(worldMap, ['forest'], 'snow', 8);
-            this.randomTileEffect(worldMap, ['shallow_water'], 'ice', 6);
+            this.randomTileEffect(worldMap, gameState, ['grass'], 'snow', 12);
+            this.randomTileEffect(worldMap, gameState, ['forest'], 'snow', 8);
+            this.randomTileEffect(worldMap, gameState, ['shallow_water'], 'ice', 6);
         } else if (age.id === 'moon') {
             // Mysterious: some snow melts, some grass appears
-            this.randomTileEffect(worldMap, ['snow'], 'grass', 5);
-            this.randomTileEffect(worldMap, ['dirt'], 'grass', 3);
+            this.randomTileEffect(worldMap, gameState, ['snow'], 'grass', 5);
+            this.randomTileEffect(worldMap, gameState, ['dirt'], 'grass', 3);
         } else if (age.id === 'wonders') {
             // Magic regrowth
-            this.randomTileEffect(worldMap, ['dirt', 'burned'], 'grass', 10);
-            this.randomTileEffect(worldMap, ['sand'], 'grass', 5);
-            this.randomTileEffect(worldMap, ['ice'], 'shallow_water', 8);
+            this.randomTileEffect(worldMap, gameState, ['dirt', 'burned'], 'grass', 10);
+            this.randomTileEffect(worldMap, gameState, ['sand'], 'grass', 5);
+            this.randomTileEffect(worldMap, gameState, ['ice'], 'shallow_water', 8);
         }
     }
 
-    randomTileEffect(worldMap, fromTypes, toType, count) {
+    randomTileEffect(worldMap, gameState, fromTypes, toType, count) {
         let applied = 0;
         let attempts = 0;
+        const changed = [];
         while (applied < count && attempts < count * 5) {
             attempts++;
             const x = Math.floor(Math.random() * worldMap.width);
@@ -189,8 +191,13 @@ export class AgeSystem {
             const tile = worldMap.getTile(x, y);
             if (fromTypes.includes(tile)) {
                 worldMap.setTile(x, y, toType);
+                changed.push({ x, y });
                 applied++;
             }
+        }
+        // Push dirty tiles so terrain renderer updates visually
+        if (changed.length > 0 && gameState.dirtyTiles) {
+            gameState.dirtyTiles.push(...changed);
         }
     }
 

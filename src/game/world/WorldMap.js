@@ -115,6 +115,8 @@ export class WorldMap {
     }
 
     placeBuilding(x, y, building) {
+        building.tileX = x;
+        building.tileY = y;
         // Add default HP for village_center
         if (building.type === 'village_center') {
             building.hp = 200;

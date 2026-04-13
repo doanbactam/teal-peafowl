@@ -7,25 +7,27 @@ import { Minimap } from '../ui/Minimap.js';
 import { LAW_CATEGORIES } from '../systems/WorldLawsSystem.js';
 import { getRarityColor, MODIFIERS, EQUIPMENT_SLOTS } from '../data/equipment.js';
 
-// ---- UI THEME (Nord-inspired, extended) ----
+// ---- UI THEME (Premium Glassmorphism) ----
 const THEME = {
-    bg: 0x3b4252,
-    bgBorder: 0x2e3440,
-    bgInner: 0x434c5e,
-    btn: 0x4c566a,
-    btnHover: 0x5e81ac,
-    btnActive: 0x81a1c1,
-    highlight: 0x8fbcbb,
-    text: '#eceff4',
-    gold: '#ebcb8b',
-    red: '#bf616a',
-    green: '#a3be8c',
-    blue: '#81a1c1',
-    purple: '#b48ead',
-    orange: '#d08770',
-    cyan: '#88c0d0',
+    bg: 0x0f172a, // Deep slate
+    bgBorder: 0xffffff,
+    bgInner: 0xffffff,
+    btn: 0x1e293b,
+    btnHover: 0x38bdf8,
+    btnActive: 0x0ea5e9,
+    highlight: 0x38bdf8,
+    text: '#ffffff',
+    gold: '#fcd34d',
+    red: '#f87171',
+    green: '#4ade80',
+    blue: '#60a5fa',
+    purple: '#c084fc',
+    orange: '#fb923c',
+    cyan: '#22d3ee',
     shadow: 0x000000,
-    panelAlpha: 0.92,
+    panelAlpha: 0.65, // translucent dark
+    btnAlpha: 0.5,
+    borderAlpha: 0.25,
 };
 
 const AGE_UI_COLORS = {
@@ -201,34 +203,39 @@ export class HudScene extends Phaser.Scene {
     drawPanel(graphics, x, y, width, height, isButton = false, isActive = false) {
         graphics.clear();
         const mainColor = isActive ? THEME.btnActive : (isButton ? THEME.btn : THEME.bg);
+        const alpha = isActive ? 0.9 : (isButton ? THEME.btnAlpha : THEME.panelAlpha);
+        const radius = isButton ? 10 : 14;
 
-        // Shadow
-        graphics.fillStyle(THEME.shadow, 0.5);
-        graphics.fillRoundedRect(x + 2, y + 2, width, height, 4);
-
-        // Outer border
-        graphics.fillStyle(THEME.bgBorder, 1);
-        graphics.fillRoundedRect(x - 2, y - 2, width + 4, height + 4, 4);
+        // Soft Drop Shadow
+        graphics.fillStyle(THEME.shadow, 0.4);
+        graphics.fillRoundedRect(x, y + 4, width, height, radius);
+        graphics.fillStyle(THEME.shadow, 0.2);
+        graphics.fillRoundedRect(x - 2, y + 6, width + 4, height, radius);
 
         // Main bg
-        graphics.fillStyle(mainColor, THEME.panelAlpha);
-        graphics.fillRoundedRect(x, y, width, height, 2);
+        graphics.fillStyle(mainColor, alpha);
+        graphics.fillRoundedRect(x, y, width, height, radius);
 
-        // Inner highlight (top & left edge for depth)
-        graphics.lineStyle(2, isActive ? 0xffffff : THEME.bgInner, isButton ? 0.3 : 0.1);
-        graphics.beginPath();
-        graphics.moveTo(x, y + height);
-        graphics.lineTo(x, y);
-        graphics.lineTo(x + width, y);
-        graphics.strokePath();
+        // Glass reflection effect (top part)
+        graphics.fillStyle(0xffffff, 0.04);
+        graphics.fillRoundedRect(x + 2, y + 2, width - 4, height / 2.5, radius - 2);
+
+        // Glass edge / Outer border
+        graphics.lineStyle(1.5, THEME.bgBorder, isActive ? 0.6 : THEME.borderAlpha);
+        graphics.strokeRoundedRect(x, y, width, height, radius);
+        
+        // Inner bright edge for depth
+        graphics.lineStyle(1, 0xffffff, isActive ? 0.3 : 0.08);
+        graphics.strokeRoundedRect(x + 1, y + 1, width - 2, height - 2, radius - 1);
     }
 
     drawHoverGlow(graphics, x, y, w, h) {
         graphics.clear();
-        graphics.fillStyle(THEME.btnHover, 0.15);
-        graphics.fillRoundedRect(x - 3, y - 3, w + 6, h + 6, 6);
-        graphics.lineStyle(1, THEME.btnHover, 0.5);
-        graphics.strokeRoundedRect(x - 1, y - 1, w + 2, h + 2, 3);
+        const radius = 10;
+        graphics.fillStyle(THEME.btnHover, 0.25);
+        graphics.fillRoundedRect(x - 4, y - 4, w + 8, h + 8, radius + 4);
+        graphics.lineStyle(2, THEME.btnHover, 0.9);
+        graphics.strokeRoundedRect(x - 1, y - 1, w + 2, h + 2, radius);
     }
 
     drawHpBar(x, y, width, current, max, barH = 6) {
@@ -389,13 +396,19 @@ export class HudScene extends Phaser.Scene {
                 .setInteractive({ useHandCursor: true });
 
             zone.on('pointerover', () => {
-                if (tool.id !== this.selectedToolId) this.drawPanel(btnBg, x, y, btnW, btnH, true, true);
+                if (tool.id !== this.selectedToolId) {
+                    this.drawPanel(btnBg, x, y, btnW, btnH, true, true);
+                    this.tweens.add({ targets: icon, scaleX: 1.15, scaleY: 1.15, duration: 150, ease: 'Back.easeOut' });
+                }
                 this.drawHoverGlow(glowGr, x, y, btnW, btnH);
                 glowGr.setVisible(true);
                 this.showTooltip(tool.name, tool.description, x + btnW / 2, y - 40);
             });
             zone.on('pointerout', () => {
-                if (tool.id !== this.selectedToolId) this.drawPanel(btnBg, x, y, btnW, btnH, true, false);
+                if (tool.id !== this.selectedToolId) {
+                    this.drawPanel(btnBg, x, y, btnW, btnH, true, false);
+                    this.tweens.add({ targets: icon, scaleX: 1, scaleY: 1, duration: 150, ease: 'Power1' });
+                }
                 glowGr.setVisible(false);
                 this.hideTooltip();
             });
@@ -406,7 +419,18 @@ export class HudScene extends Phaser.Scene {
             });
 
             this.toolPanelContainer.add([zone, glowGr, btnBg, icon]);
-            this.toolButtons.push({ id: tool.id, bg: btnBg, x, y, w: btnW, h: btnH });
+            this.toolButtons.push({ id: tool.id, bg: btnBg, x, y, w: btnW, h: btnH, icon: icon });
+        });
+
+        // Add pop-in animation
+        this.toolPanelContainer.setAlpha(0);
+        this.toolPanelContainer.y = 20;
+        this.tweens.add({
+            targets: this.toolPanelContainer,
+            alpha: 1,
+            y: 0,
+            duration: 250,
+            ease: 'Cubic.easeOut'
         });
     }
 
@@ -415,7 +439,13 @@ export class HudScene extends Phaser.Scene {
         this.gameSceneRef.setTool(tool);
 
         this.toolButtons.forEach(b => {
-            this.drawPanel(b.bg, b.x, b.y, b.w, b.h, true, b.id === tool.id);
+            const isSelected = b.id === tool.id;
+            this.drawPanel(b.bg, b.x, b.y, b.w, b.h, true, isSelected);
+            if (isSelected) {
+                b.icon.setScale(1.2);
+            } else {
+                b.icon.setScale(1.0);
+            }
         });
     }
 
@@ -492,7 +522,7 @@ export class HudScene extends Phaser.Scene {
     // ============================================
     createTopPanel() {
         // TOP LEFT: Year, Age, Population, Settlement, Kingdom, Animal counts
-        const tlW = 280;
+        const tlW = 330;
         const tlH = 70;
         const tlBg = this.add.graphics();
         this.drawPanel(tlBg, 10, 10, tlW, tlH);
@@ -646,7 +676,7 @@ export class HudScene extends Phaser.Scene {
         this.speedIndicator.clear();
 
         const tlX = 10;
-        const barX = tlX + 260;
+        const barX = tlX + 310;
         const barY = 18;
         const barW = 8;
         const barH = 50;
@@ -705,8 +735,9 @@ export class HudScene extends Phaser.Scene {
         // Counts
         const settleCount = this.gameSceneRef.settlementManager ? this.gameSceneRef.settlementManager.getAll().length : 0;
         const kingdomCount = this.gameSceneRef.kingdomManager ? this.gameSceneRef.kingdomManager.getAll().length : 0;
+        const faith = Math.floor(this.registry.get('globalFaith') || 0);
         this.countsText.setText(
-            `👥${pop}  🏘️${settleCount}  👑${kingdomCount}  🐾${animalCount}  ⏱️x${simSpeed}`
+            `👥${pop}  🏘️${settleCount}  👑${kingdomCount}  🐾${animalCount}  🌟${faith}  ⏱️x${simSpeed}`
         );
 
         // Sample population history

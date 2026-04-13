@@ -658,7 +658,9 @@ export class TerrainRenderer {
 
     updateDirty() {
         for (const key of this.dirtyChunks) {
-            const [cx, cy] = key.split(',').map(Number);
+            const comma = key.indexOf(',');
+            const cx = parseInt(key.substring(0, comma), 10);
+            const cy = parseInt(key.substring(comma + 1), 10);
             this.renderChunk(cx, cy);
         }
         this.dirtyChunks.clear();

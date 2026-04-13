@@ -26,11 +26,24 @@ export const TRAITS = {
     king: { id: 'king', name: 'Vương Giả', description: 'Vị vua tối cao, biểu tượng của vương quốc', stats: { attack: 10, defense: 10, maxHp: 100 } },
 
     // Gene-influenced traits (can be inherited via subspecies)
-    mage_affinity: { id: 'mage_affinity', name: 'Thiên Phú Phép', description: 'Có khiếu pháp thuật bẩm sinh', stats: { mana: 10, maxMana: 10 } }
+    mage_affinity: { id: 'mage_affinity', name: 'Thiên Phú Phép', description: 'Có khiếu pháp thuật bẩm sinh', stats: { mana: 10, maxMana: 10 } },
+
+    // Social / personality traits
+    extrovert: { id: 'extrovert', name: 'Hướng Ngoại', description: 'Dễ kết bạn, cần giao tiếp', stats: {} },
+    introvert: { id: 'introvert', name: 'Hướng Nội', description: 'Thích một mình, ít kết bạn', stats: {} },
+    charismatic: { id: 'charismatic', name: 'Lôi Cuốn', description: 'Thu hút người khác, tăng loyalty', stats: { defense: 1 } },
+    jealous: { id: 'jealous', name: 'Ghen Tị', description: 'Dễ sinh thù hằn', stats: {} },
+    loyal_heart: { id: 'loyal_heart', name: 'Trung Thành', description: 'Tăng quan hệ mạnh, khó phản bội', stats: {} },
+    romantic: { id: 'romantic', name: 'Lãng Mạn', description: 'Dễ yêu, hạnh phúc khi có đôi', stats: {} },
+    loner: { id: 'loner', name: 'Cô Độc', description: 'Không cần quan hệ, ít bị ảnh hưởng', stats: {} },
+    gossipy: { id: 'gossipy', name: 'Buôn Chuyện', description: 'Lan truyền tin đồn, ảnh hưởng mood tập thể', stats: {} },
+    compassionate: { id: 'compassionate', name: 'Từ Bi', description: 'Giúp đỡ người yếu, tăng stability', stats: {} },
+    aggressive: { id: 'aggressive', name: 'Hung Hãn', description: 'Dễ gây sự, giảm stability', stats: { attack: 1 } }
 };
 
 export const POSITIVE_TRAITS = ['strong', 'fast', 'tough', 'immortal', 'giant', 'regenerative', 'immune'];
 export const NEGATIVE_TRAITS = ['weak', 'slow', 'fragile', 'tiny', 'infected'];
+export const SOCIAL_PERSONALITY_TRAITS = ['extrovert', 'introvert', 'charismatic', 'jealous', 'loyal_heart', 'romantic', 'loner', 'gossipy', 'compassionate', 'aggressive'];
 
 /**
  * Applies traits to an entity's base stats.
@@ -112,10 +125,12 @@ export function removeTrait(entity, traitId) {
 
 /**
  * Randomly generate traits.
- * 20% chance for a random trait, then 5% for a second one.
+ * 20% chance for a random stat trait, then 5% for a second one.
+ * 40% chance for a social/personality trait.
  */
 export function generateRandomTraits() {
     const traits = [];
+    // Stat traits
     if (Math.random() < 0.20) {
         const list = Math.random() > 0.5 ? POSITIVE_TRAITS : NEGATIVE_TRAITS;
         traits.push(list[Math.floor(Math.random() * list.length)]);
@@ -124,6 +139,11 @@ export function generateRandomTraits() {
         const list = Math.random() > 0.5 ? POSITIVE_TRAITS : NEGATIVE_TRAITS;
         const newTrait = list[Math.floor(Math.random() * list.length)];
         if (!traits.includes(newTrait)) traits.push(newTrait);
+    }
+    // Social personality trait — most entities get one
+    if (Math.random() < 0.40) {
+        const socialTrait = SOCIAL_PERSONALITY_TRAITS[Math.floor(Math.random() * SOCIAL_PERSONALITY_TRAITS.length)];
+        if (!traits.includes(socialTrait)) traits.push(socialTrait);
     }
     return traits;
 }

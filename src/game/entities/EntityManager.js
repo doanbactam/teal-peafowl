@@ -109,20 +109,21 @@ export class EntityManager {
             entity.name = generateUnitName(entity.raceId);
         }
 
-        this.entities.set(id, entity);
+        // Use entity.id (may differ from local id if props contained an id, e.g. during save/load)
+        this.entities.set(entity.id, entity);
 
         // Index by race
         if (!this.byRace.has(entity.raceId)) {
             this.byRace.set(entity.raceId, new Set());
         }
-        this.byRace.get(entity.raceId).add(id);
+        this.byRace.get(entity.raceId).add(entity.id);
 
         // Index by settlement
         if (entity.settlementId >= 0) {
             if (!this.bySettlement.has(entity.settlementId)) {
                 this.bySettlement.set(entity.settlementId, new Set());
             }
-            this.bySettlement.get(entity.settlementId).add(id);
+            this.bySettlement.get(entity.settlementId).add(entity.id);
         }
 
         return entity;

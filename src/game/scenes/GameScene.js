@@ -26,6 +26,9 @@ import { EquipmentSystem } from '../systems/EquipmentSystem.js';
 import { TechSystem } from '../systems/TechSystem.js';
 import { WorldLawsSystem } from '../systems/WorldLawsSystem.js';
 import { HistorySystem, HISTORY_EVENTS } from '../systems/HistorySystem.js';
+import { SocialSystem } from '../systems/SocialSystem.js';
+import { FaithSystem } from '../systems/FaithSystem.js';
+import { SpriteRenderer } from '../rendering/SpriteRenderer.js';
 
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -86,6 +89,12 @@ export class GameScene extends Phaser.Scene {
         // === HISTORY SYSTEM ===
         this.historySystem = new HistorySystem();
 
+        // === SOCIAL SYSTEM ===
+        this.socialSystem = new SocialSystem();
+
+        // === FAITH SYSTEM ===
+        this.faithSystem = new FaithSystem();
+
         // === GAME STATE (shared by all systems) ===
         this.gameState = {
             worldMap: this.worldMap,
@@ -102,6 +111,8 @@ export class GameScene extends Phaser.Scene {
             techSystem: this.techSystem,
             worldLawsSystem: this.worldLawsSystem,
             historySystem: this.historySystem,
+            socialSystem: this.socialSystem,
+            faithSystem: this.faithSystem,
             dirtyTiles: [],
             visualEvents: []
         };
@@ -122,15 +133,20 @@ export class GameScene extends Phaser.Scene {
         this.simLoop.addSystem('roads', this.roadSystem);
         this.simLoop.addSystem('equipment', this.equipmentSystem);
         this.simLoop.addSystem('tech', this.techSystem);
+        this.simLoop.addSystem('social', this.socialSystem);
+        this.simLoop.addSystem('faith', this.faithSystem);
         this.simLoop.addSystem('history', this.historySystem);
 
-        // === ENTITY SPRITES LAYER ===
-        this.entityGraphics = this.add.graphics();
-        this.entityGraphics.setDepth(10);
+        // === SPRITE RENDERER (replaces old procedural entity/building graphics) ===
+        this.spriteRenderer = new SpriteRenderer(this);
 
-        // === BUILDING GRAPHICS LAYER ===
-        this.buildingGraphics = this.add.graphics();
-        this.buildingGraphics.setDepth(5);
+        // === FIRE GRAPHICS LAYER (still procedural) ===
+        this.fireGraphics = this.add.graphics();
+        this.fireGraphics.setDepth(11);
+
+        // === FARM PLOT GRAPHICS LAYER ===
+        this.farmGraphics = this.add.graphics();
+        this.farmGraphics.setDepth(6);
 
         // === SELECTION / BRUSH OVERLAY ===
         this.brushOverlay = this.add.graphics();
@@ -303,6 +319,7 @@ export class GameScene extends Phaser.Scene {
         this.registry.set('totalPopulation', 0);
         this.registry.set('animalCount', 0);
         this.registry.set('worldYear', 0);
+        this.registry.set('globalFaith', 500);
     }
 
     update(time, delta) {
@@ -396,11 +413,15 @@ export class GameScene extends Phaser.Scene {
         // === RENDER ROADS ===
         this.renderRoads();
 
-        // === RENDER ENTITIES ===
-        this.renderEntities();
+        // === RENDER ENTITIES + ANIMALS + SHIPS (sprite-based) ===
+        this.spriteRenderer.renderEntities(
+            this.entityManager, this.animalSystem, this.navalSystem,
+            this.worldMap, this.cameras.main
+        );
 
-        // === RENDER BUILDINGS (includes farm plots) ===
-        this.renderBuildings();
+        // === RENDER BUILDINGS (sprite-based) + FARM PLOTS ===
+        this.spriteRenderer.renderBuildings(this.worldMap, this.cameras.main);
+        this.renderFarmPlots();
 
         // === RENDER SIEGE EFFECTS ===
         this.renderSiege();
@@ -422,6 +443,7 @@ export class GameScene extends Phaser.Scene {
         this.registry.set('totalPopulation', this.entityManager.countAlive());
         this.registry.set('animalCount', this.animalSystem.getAllAlive().length);
         this.registry.set('worldYear', this.worldYear);
+        this.registry.set('globalFaith', Math.floor(this.faithSystem.globalFaith));
     }
 
     // ─── RENDER: Environment (Clouds & Birds) ─────────────────────
@@ -605,7 +627,9 @@ export class GameScene extends Phaser.Scene {
             this._territoryGfx.fillStyle(tColor, 0.2);
 
             for (const key of settlement.territory) {
-                const [tx, ty] = key.split(',').map(Number);
+                const comma = key.indexOf(',');
+                const tx = parseInt(key.substring(0, comma), 10);
+                const ty = parseInt(key.substring(comma + 1), 10);
                 const px = tx * ts;
                 const py = ty * ts;
                 if (px < vx - ts || px > vx + vw + ts ||
@@ -633,7 +657,9 @@ export class GameScene extends Phaser.Scene {
 
         this.plagueOverlay.fillStyle(0x00ff00, 0.12);
         for (const key of this.worldMap.plagueTiles) {
-            const [tx, ty] = key.split(',').map(Number);
+            const comma = key.indexOf(',');
+            const tx = parseInt(key.substring(0, comma), 10);
+            const ty = parseInt(key.substring(comma + 1), 10);
             const px = tx * ts;
             const py = ty * ts;
             if (px < vx - ts || px > vx + vw + ts ||
@@ -645,7 +671,9 @@ export class GameScene extends Phaser.Scene {
         if (this.worldMap.radiationTiles && this.worldMap.radiationTiles.size > 0) {
             this.plagueOverlay.fillStyle(0x88ff00, 0.18);
             for (const key of this.worldMap.radiationTiles) {
-                const [tx, ty] = key.split(',').map(Number);
+                const comma = key.indexOf(',');
+                const tx = parseInt(key.substring(0, comma), 10);
+                const ty = parseInt(key.substring(comma + 1), 10);
                 const px = tx * ts;
                 const py = ty * ts;
                 if (px < vx - ts || px > vx + vw + ts ||
@@ -1814,9 +1842,8 @@ export class GameScene extends Phaser.Scene {
         // Show attack sparks on buildings being sieged
         for (const [key, building] of this.worldMap.buildingGrid) {
             if (building.type !== 'village_center' || !building._underSiege) continue;
-            const [x, y] = key.split(',').map(Number);
-            const px = x * ts;
-            const py = y * ts;
+            const px = building.tileX * ts;
+            const py = building.tileY * ts;
             if (px < vx - ts || px > vx + vw + ts ||
                 py < vy - ts || py > vy + vh + ts) continue;
 
@@ -1848,19 +1875,78 @@ export class GameScene extends Phaser.Scene {
 
     // ─── RENDER: Fires ──────────────────────────────────────────
     renderFires() {
+        this.fireGraphics.clear();
         const ts = this.worldMap.tileSize;
 
         for (const key of this.worldMap.fireTiles) {
-            const [x, y] = key.split(',').map(Number);
+            const comma = key.indexOf(',');
+            const x = parseInt(key.substring(0, comma), 10);
+            const y = parseInt(key.substring(comma + 1), 10);
             const flicker = Math.random();
             const color = flicker > 0.5 ? 0xff4400 : 0xff8800;
-            this.entityGraphics.fillStyle(color, 0.7);
-            this.entityGraphics.fillRect(x * ts, y * ts, ts, ts);
+            this.fireGraphics.fillStyle(color, 0.7);
+            this.fireGraphics.fillRect(x * ts, y * ts, ts, ts);
 
             // Smoke particles
             if (Math.random() > 0.5) {
-                this.entityGraphics.fillStyle(0x333333, 0.3);
-                this.entityGraphics.fillRect(x * ts + Math.random() * ts, y * ts - Math.random() * 4, 2, 2);
+                this.fireGraphics.fillStyle(0x333333, 0.3);
+                this.fireGraphics.fillRect(x * ts + Math.random() * ts, y * ts - Math.random() * 4, 2, 2);
+            }
+        }
+    }
+
+    // ─── RENDER: Farm Plots ─────────────────────────────────────
+    renderFarmPlots() {
+        this.farmGraphics.clear();
+        const ts = this.worldMap.tileSize;
+        const cam = this.cameras.main;
+        const vx = cam.worldView.x;
+        const vy = cam.worldView.y;
+        const vw = cam.worldView.width;
+        const vh = cam.worldView.height;
+
+        for (const settlement of this.settlementManager.getAll()) {
+            if (!settlement.farmPlots) continue;
+            for (const plot of settlement.farmPlots) {
+                const px = plot.x * ts;
+                const py = plot.y * ts;
+                if (px < vx - ts || px > vx + vw + ts ||
+                    py < vy - ts || py > vy + vh + ts) continue;
+
+                // Nền đất cày xới (Tilled Soil)
+                this.farmGraphics.fillStyle(0x654321, 1);
+                this.farmGraphics.fillRect(px, py, ts, ts);
+
+                // Các luống cày (Rows)
+                this.farmGraphics.fillStyle(0x4a2e15, 0.8);
+                this.farmGraphics.fillRect(px, py + ts * 0.2, ts, 1);
+                this.farmGraphics.fillRect(px, py + ts * 0.5, ts, 1);
+                this.farmGraphics.fillRect(px, py + ts * 0.8, ts, 1);
+
+                // Use plot.stage (set by ResourceSystem), not plot.state
+                const stage = plot.stage || plot.state || 'planted';
+                if (stage === 'growing' || stage === 'sprouting') {
+                    this.farmGraphics.fillStyle(0x2ecc71, 0.9);
+                    this.farmGraphics.fillRect(px + ts * 0.2, py + ts * 0.1, 2, 2);
+                    this.farmGraphics.fillRect(px + ts * 0.4, py + ts * 0.4, 2, 2);
+                    this.farmGraphics.fillRect(px + ts * 0.6, py + ts * 0.7, 2, 2);
+                    this.farmGraphics.fillRect(px + ts * 0.8, py + ts * 0.1, 2, 2);
+                } else if (stage === 'mature' || stage === 'harvestable') {
+                    this.farmGraphics.fillStyle(0xf1c40f, 1);
+                    this.farmGraphics.fillRect(px + 1, py + 1, ts - 2, ts * 0.3);
+                    this.farmGraphics.fillRect(px + 1, py + ts * 0.35, ts - 2, ts * 0.3);
+                    this.farmGraphics.fillRect(px + 1, py + ts * 0.7, ts - 2, ts * 0.25);
+                    this.farmGraphics.fillStyle(0xd4ac0d, 1);
+                    this.farmGraphics.fillRect(px + 1, py, ts - 2, 1);
+                    this.farmGraphics.fillRect(px + 1, py + ts * 0.35, ts - 2, 1);
+                    this.farmGraphics.fillRect(px + 1, py + ts * 0.7, ts - 2, 1);
+                } else if (stage === 'planted') {
+                    this.farmGraphics.fillStyle(0xbdb76b, 0.6);
+                    this.farmGraphics.fillRect(px + ts * 0.2, py + ts * 0.15, 2, 1);
+                    this.farmGraphics.fillRect(px + ts * 0.5, py + ts * 0.45, 2, 1);
+                    this.farmGraphics.fillRect(px + ts * 0.3, py + ts * 0.75, 2, 1);
+                    this.farmGraphics.fillRect(px + ts * 0.7, py + ts * 0.15, 2, 1);
+                }
             }
         }
     }
@@ -1875,49 +1961,77 @@ export class GameScene extends Phaser.Scene {
         if (tilePos.x < 0 || tilePos.x >= this.worldMap.width ||
             tilePos.y < 0 || tilePos.y >= this.worldMap.height) return;
 
+        // Check if we can afford the tool's faith cost
+        if (!this.faithSystem.canAffordTool(tool)) {
+            // Might want to show a visual error, but for now just abort
+            if (!this._cooldownFaithAlert || Date.now() - this._cooldownFaithAlert > 2000) {
+                this.registry.set('notification', 'Không đủ Faith!');
+                this._cooldownFaithAlert = Date.now();
+            }
+            return;
+        }
+
+        let applied = true;
+
         switch (tool.category) {
             case 'terrain':
-                this.useTerrain(tool, tilePos);
+                applied = this.useTerrain(tool, tilePos);
                 break;
             case 'life':
-                this.useLife(tool, tilePos);
+                applied = this.useLife(tool, tilePos);
                 break;
             case 'disasters':
-                this.useDisaster(tool, tilePos);
+                applied = this.useDisaster(tool, tilePos);
                 break;
             case 'magic':
-                this.useMagic(tool, tilePos);
+                applied = this.useMagic(tool, tilePos);
                 break;
             case 'animals':
-                this.useAnimal(tool, tilePos);
+                applied = this.useAnimal(tool, tilePos);
                 break;
             case 'inspect':
                 this.useInspect(tilePos);
+                applied = false;
                 break;
             case 'other':
                 if (tool.id === 'diplomacy') {
                     this.useDiplomacy(tilePos);
+                    applied = false; // no cost
                 } else if (tool.id === 'migrate') {
                     this.useMigrate(tilePos);
+                    applied = false; // no cost
                 } else if (tool.id === 'world_laws') {
                     this.registry.set('showWorldLaws', true);
+                    applied = false; // no cost
                 } else if (tool.id === 'history') {
                     this.registry.set('showHistory', true);
+                    applied = false; // no cost
                 }
                 break;
+            default:
+                applied = false;
+        }
+
+        // Spend faith if actually applied
+        if (applied) {
+            this.faithSystem.spendForTool(tool, tilePos, this.gameState);
+            
+            // Re-render HUD or notify changes
+            this.registry.set('globalFaith', Math.floor(this.faithSystem.globalFaith));
         }
     }
 
     useTerrain(tool, pos) {
         if (tool.id === 'eraser') {
-            this.useEraser(tool, pos);
-            return;
+            return this.useEraser(tool, pos);
         }
         const changed = this.worldMap.paint(pos.x, pos.y, tool.brush || this.brushSize, tool.tileType);
         if (changed.length > 0) {
             this.terrainRenderer.markDirty(changed);
             this.terrainRenderer.updateDirty();
+            return true;
         }
+        return false;
     }
 
     useEraser(tool, pos) {
@@ -1962,14 +2076,16 @@ export class GameScene extends Phaser.Scene {
         if (changed.length > 0) {
             this.terrainRenderer.markDirty(changed);
             this.terrainRenderer.updateDirty();
+            return true;
         }
+        return false;
     }
 
     useLife(tool, pos) {
-        if (this.isPainting && this._lastSpawnTick === this.simLoop.getTick()) return;
+        if (this.isPainting && this._lastSpawnTick === this.simLoop.getTick()) return false;
         this._lastSpawnTick = this.simLoop.getTick();
 
-        if (!this.worldMap.isBuildable(pos.x, pos.y)) return;
+        if (!this.worldMap.isBuildable(pos.x, pos.y)) return false;
 
         const race = getRace(tool.raceId);
 
@@ -1986,7 +2102,7 @@ export class GameScene extends Phaser.Scene {
         if (placedInsideId >= 0) {
             const settlement = this.settlementManager.get(placedInsideId);
             this.spawnGodUnits(settlement, pos, race, 3);
-            return;
+            return true;
         }
 
         // Otherwise, found a new kingdom and settlement.
@@ -2012,6 +2128,7 @@ export class GameScene extends Phaser.Scene {
         });
 
         this.spawnGodUnits(settlement, pos, race, 5);
+        return true;
     }
 
     spawnGodUnits(settlement, centerPos, race, count) {
@@ -2041,21 +2158,23 @@ export class GameScene extends Phaser.Scene {
     }
 
     useDisaster(tool, pos) {
-        if (this.isPainting && this._lastDisasterTick === this.simLoop.getTick()) return;
+        if (this.isPainting && this._lastDisasterTick === this.simLoop.getTick()) return false;
         this._lastDisasterTick = this.simLoop.getTick();
 
         this.disasterSystem.trigger(tool.id, pos.x, pos.y);
+        return true;
     }
 
     useMagic(tool, pos) {
-        if (this.isPainting && this._lastMagicTick === this.simLoop.getTick()) return;
+        if (this.isPainting && this._lastMagicTick === this.simLoop.getTick()) return false;
         this._lastMagicTick = this.simLoop.getTick();
 
         this.disasterSystem.trigger(tool.id, pos.x, pos.y);
+        return true;
     }
 
     useAnimal(tool, pos) {
-        if (this.isPainting && this._lastAnimalTick === this.simLoop.getTick()) return;
+        if (this.isPainting && this._lastAnimalTick === this.simLoop.getTick()) return false;
         this._lastAnimalTick = this.simLoop.getTick();
 
         const brushRadius = tool.brush || 1;
@@ -2079,6 +2198,7 @@ export class GameScene extends Phaser.Scene {
                 }
             }
         }
+        return true;
     }
 
     useInspect(pos) {
@@ -2833,6 +2953,11 @@ export class GameScene extends Phaser.Scene {
         
         this.terrainRenderer.renderAll();
 
+        // Restore ID counters FIRST to prevent conflicts during create() calls
+        if (data.maxEntityId) setNextEntityId(data.maxEntityId);
+        if (data.maxSettlementId) setNextSettlementId(data.maxSettlementId);
+        if (data.maxKingdomId) setNextKingdomId(data.maxKingdomId);
+
         // Restore kingdoms first (settlements reference them)
         if (data.kingdoms) {
             for (const kd of data.kingdoms) {
@@ -2841,7 +2966,6 @@ export class GameScene extends Phaser.Scene {
                     enemies: new Set(kd.enemies || []),
                     allies: new Set(kd.allies || [])
                 });
-                // Ensure ID counter is above loaded IDs
             }
         }
 
@@ -2880,10 +3004,7 @@ export class GameScene extends Phaser.Scene {
             this.ageSystem.restoreState(data.ageState);
         }
 
-        // Restore ID counters to prevent conflicts
-        if (data.maxEntityId) setNextEntityId(data.maxEntityId);
-        if (data.maxSettlementId) setNextSettlementId(data.maxSettlementId);
-        if (data.maxKingdomId) setNextKingdomId(data.maxKingdomId);
+        // (ID counters were already restored above, before create() calls)
 
         // Restore roads
         if (data.roads && this.roadSystem) {
@@ -2903,6 +3024,16 @@ export class GameScene extends Phaser.Scene {
         // Restore history
         if (data.history && this.historySystem) {
             this.historySystem.restoreSaveData(data.history);
+        }
+
+        // Restore social system
+        if (data.social && this.socialSystem) {
+            this.socialSystem.restoreSaveData(data.social);
+        }
+
+        // Restore faith system
+        if (data.faith && this.faithSystem) {
+            this.faithSystem.restoreSaveData(data.faith);
         }
 
         // Restore world age

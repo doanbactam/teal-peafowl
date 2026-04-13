@@ -73,25 +73,75 @@ export class PopulationSystem {
             if (settlement.population < settlement.maxPopulation && settlement.food >= 5) {
                 // Birth rate scales with food abundance and race trait
                 const foodRatio = Math.min(1, settlement.food / 50);
-                const birthChance = race.stats.birthRate * foodRatio;
+                let birthChance = race.stats.birthRate * foodRatio;
+
+                // Social stability bonus — stable settlements reproduce more
+                if (settlement.socialStability !== undefined) {
+                    if (settlement.socialStability > 70) birthChance *= 1.3;
+                    else if (settlement.socialStability < 30) birthChance *= 0.6;
+                }
 
                 if (Math.random() < birthChance) {
-                    // Pick random parent for traits
+                    // Prioritize married couples as parents
+                    let parentA = null;
+                    let parentB = null;
                     let parentTraits = [];
                     let parentSubspecies = null;
                     let parentRef = null;
-                    if (units.length > 0) {
+
+                    const socialSystem = gameState.socialSystem;
+                    if (socialSystem) {
+                        // Find a married couple in this settlement
+                        for (const [, couple] of socialSystem.marriages) {
+                            const a = gameState.entityManager.get(couple.a);
+                            const b = gameState.entityManager.get(couple.b);
+                            if (a && b && a.alive && b.alive &&
+                                a.settlementId === settlement.id && b.settlementId === settlement.id &&
+                                a.age >= 15 && b.age >= 15) {
+                                parentA = a;
+                                parentB = b;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (parentA && parentB) {
+                        // Two-parent inheritance — merge traits from both parents
+                        const mergedTraits = [...new Set([...(parentA.traits || []), ...(parentB.traits || [])])];
+                        parentTraits = mergedTraits;
+                        parentSubspecies = Math.random() < 0.5 ? parentA.subspecies : parentB.subspecies;
+                        parentRef = Math.random() < 0.5 ? parentA : parentB;
+                    } else if (units.length > 0) {
+                        // Fallback: single parent (the old way)
                         const parent = units[Math.floor(Math.random() * units.length)];
                         parentTraits = parent.traits;
                         parentSubspecies = parent.subspecies;
                         parentRef = parent;
                     }
+
                     const subspeciesTraits = parentSubspecies ? (parentSubspecies.traits || []) : [];
                     const babyTraits = inheritTraits(parentTraits, subspeciesTraits);
 
                     const baby = this.spawnUnit(gameState, settlement, race, babyTraits, parentSubspecies, parentRef);
                     if (baby) {
                         settlement.food -= 3;
+
+                        // Link baby to both parents if married couple
+                        if (parentA && parentB) {
+                            baby.familyId = parentA.familyId || parentB.familyId || `fam_${parentA.id}`;
+                            baby.parentIds = [parentA.id, parentB.id];
+                            if (!parentA.familyId) parentA.familyId = baby.familyId;
+                            if (!parentB.familyId) parentB.familyId = baby.familyId;
+                            if (!parentA.children) parentA.children = [];
+                            if (!parentB.children) parentB.children = [];
+                            parentA.children.push(baby.id);
+                            parentB.children.push(baby.id);
+                            baby.generation = Math.max((parentA.generation || 1), (parentB.generation || 1)) + 1;
+
+                            // Birth celebration — married couple bonus
+                            parentA.happiness = Math.min(100, (parentA.happiness || 50) + 10);
+                            parentB.happiness = Math.min(100, (parentB.happiness || 50) + 10);
+                        }
                     }
                 }
             }
@@ -158,6 +208,27 @@ export class PopulationSystem {
                     if (tile === 'flower_meadow' || tile === 'celestial') happiness += 5;
                 }
 
+                // === SOCIAL MODIFIERS ===
+                // Colony social stability
+                if (settlement.socialStability !== undefined) {
+                    if (settlement.socialStability > 70) happiness += 8;
+                    else if (settlement.socialStability > 50) happiness += 3;
+                    else if (settlement.socialStability < 20) happiness -= 10;
+                    else if (settlement.socialStability < 35) happiness -= 5;
+                }
+                // Spouse bonus
+                if (unit.spouseId) {
+                    const spouse = gameState.entityManager.get(unit.spouseId);
+                    if (spouse && spouse.alive && spouse.settlementId === unit.settlementId) {
+                        happiness += 10;
+                    } else if (!spouse || !spouse.alive) {
+                        happiness -= 15; // Grief
+                    }
+                }
+                // Social friends/rivals (cached by SocialSystem)
+                if (unit.socialFriends > 0) happiness += Math.min(8, unit.socialFriends * 2);
+                if (unit.socialRivals > 0) happiness -= Math.min(10, unit.socialRivals * 3);
+
                 // Clamp and assign
                 unit.happiness = Math.max(-100, Math.min(100, happiness));
             }
@@ -178,6 +249,13 @@ export class PopulationSystem {
                         );
                         if (otherSettlements.length > 0) {
                             const target = otherSettlements[Math.floor(Math.random() * otherSettlements.length)];
+                            // Update bySettlement index
+                            const oldSet = entityManager.bySettlement.get(settlement.id);
+                            if (oldSet) oldSet.delete(unit.id);
+                            if (!entityManager.bySettlement.has(target.id)) {
+                                entityManager.bySettlement.set(target.id, new Set());
+                            }
+                            entityManager.bySettlement.get(target.id).add(unit.id);
                             unit.settlementId = target.id;
                         }
                     }
