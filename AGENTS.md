@@ -82,5 +82,8 @@ This file defines the default communication contract with Nomi across all repos.
 - Prefer integrity over flattery.
 - When the goal is fuzzy, infer the deeper aim, make it explicit, and help move toward it.
 
-## Game Design Philosophy (Project Specific)
-Lấy ý tưởng từ truyện Nền Văn Minh Nebula , WorldBox ( https://www.superworldbox.com/ ) , https://store.steampowered.com/app/294100/RimWorld/
+## Project Specific Rules
+
+- **Language:** Luôn trả lời bằng Tiếng Việt.
+- **Tech Stack:** Dùng Vite + Phaser JS 4.
+- **Research first:** Luôn đọc tài liệu mới nhất liên quan tới năm 2026 trước khi viết mã về bất cứ logic nào tiếp theo.

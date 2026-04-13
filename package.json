@@ -1,18 +1,20 @@
 {
-  "name": "godbox-simulator",
+  "name": "teal-peafowl",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "three": "^0.174.0"
+    "preview": "vite preview",
+    "align-sprite": "node .agents/skills/character-sprite/scripts/align_sprite.js"
   },
   "devDependencies": {
-    "playwright": "^1.59.1",
-    "vite": "^6.2.0"
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "jimp": "^0.22.12",
+    "phaser": "latest"
   }
 }
