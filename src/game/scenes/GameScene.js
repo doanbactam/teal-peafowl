@@ -265,11 +265,21 @@ export class GameScene extends Phaser.Scene {
             load: 'F9'
         });
 
-        // Scroll zoom - Integer steps for pure pixel art
+        // Scroll zoom - Integer steps for pure pixel art, zooms to cursor
         this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
             const cam = this.cameras.main;
-            const newZoom = Phaser.Math.Clamp(cam.zoom + (deltaY > 0 ? -1 : 1), 1, 8);
-            cam.setZoom(Math.round(newZoom));
+            const oldZoom = cam.zoom;
+            const step = deltaY > 0 ? -1 : 1;
+            const newZoom = Phaser.Math.Clamp(Math.round(oldZoom + step), 1, 8);
+
+            if (newZoom !== oldZoom) {
+                // Focus zooming on the cursor instead of the center
+                const worldPoint = cam.getWorldPoint(pointer.x, pointer.y);
+                cam.setZoom(newZoom);
+                const newWorldPoint = cam.getWorldPoint(pointer.x, pointer.y);
+                cam.scrollX += worldPoint.x - newWorldPoint.x;
+                cam.scrollY += worldPoint.y - newWorldPoint.y;
+            }
         });
 
         // === INPUT: Mouse drag pan (right-click or middle-click) ===
@@ -281,7 +291,12 @@ export class GameScene extends Phaser.Scene {
                 this._soundInitialized = true;
             }
             if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
-                this.dragStart = { x: pointer.worldX, y: pointer.worldY };
+                this.dragStart = { 
+                    x: pointer.x, 
+                    y: pointer.y, 
+                    scrollX: this.cameras.main.scrollX, 
+                    scrollY: this.cameras.main.scrollY 
+                };
             } else if (pointer.leftButtonDown()) {
                 this.isPainting = true;
                 this.handleToolUse(pointer);
@@ -291,8 +306,9 @@ export class GameScene extends Phaser.Scene {
         this.input.on('pointermove', (pointer) => {
             if (this.dragStart && (pointer.rightButtonDown() || pointer.middleButtonDown())) {
                 const cam = this.cameras.main;
-                cam.scrollX += (this.dragStart.x - pointer.worldX);
-                cam.scrollY += (this.dragStart.y - pointer.worldY);
+                // Correct panning by measuring screen pixel drag scaled by camera zoom
+                cam.scrollX = this.dragStart.scrollX - (pointer.x - this.dragStart.x) / cam.zoom;
+                cam.scrollY = this.dragStart.scrollY - (pointer.y - this.dragStart.y) / cam.zoom;
             }
             if (this.isPainting && pointer.leftButtonDown()) {
                 this.handleToolUse(pointer);
@@ -2298,38 +2314,71 @@ export class GameScene extends Phaser.Scene {
     updateBrushOverlay(pointer) {
         this.brushOverlay.clear();
         const tool = this.selectedTool;
-        if (!tool || tool.category === 'inspect') return;
+        // Don't draw brush if no tool
+        if (!tool) return;
 
         const tilePos = this.worldMap.pixelToTile(pointer.worldX, pointer.worldY);
         const ts = this.worldMap.tileSize;
-        const radius = tool.brush !== undefined ? tool.brush : this.brushSize;
+        
+        let radius = tool.brush !== undefined ? tool.brush : this.brushSize;
+        if (tool.category === 'inspect' || tool.category === 'other' || tool.id === 'diplomacy' || tool.id === 'migrate') {
+            radius = 0; // Force single-tile focus for these tools
+        }
+
+        const overlayColors = {
+            terrain: 0xffffff,
+            life: 0x44ff44,
+            disasters: 0xff4444,
+            magic: 0xaa44ff,
+            inspect: 0x4488ff,
+            other: 0xffeeaa
+        };
+        const color = overlayColors[tool.category] || 0xffffff;
 
         if (radius === 0) {
-            // Single tile crosshair
-            this.brushOverlay.lineStyle(1, 0xffffff, 0.6);
-            this.brushOverlay.strokeRect(tilePos.x * ts, tilePos.y * ts, ts, ts);
+            // Single tile targeted highlight (Corner Brackets)
+            this.brushOverlay.lineStyle(2, color, 0.8);
+            const px = tilePos.x * ts;
+            const py = tilePos.y * ts;
+            const s = Math.min(ts * 0.35, 4); // Bracket size
+
+            // Top left
+            this.brushOverlay.beginPath();
+            this.brushOverlay.moveTo(px, py + s);
+            this.brushOverlay.lineTo(px, py);
+            this.brushOverlay.lineTo(px + s, py);
+            this.brushOverlay.strokePath();
+
+            // Top right
+            this.brushOverlay.beginPath();
+            this.brushOverlay.moveTo(px + ts - s, py);
+            this.brushOverlay.lineTo(px + ts, py);
+            this.brushOverlay.lineTo(px + ts, py + s);
+            this.brushOverlay.strokePath();
+
+            // Bottom left
+            this.brushOverlay.beginPath();
+            this.brushOverlay.moveTo(px, py + ts - s);
+            this.brushOverlay.lineTo(px, py + ts);
+            this.brushOverlay.lineTo(px + s, py + ts);
+            this.brushOverlay.strokePath();
+
+            // Bottom right
+            this.brushOverlay.beginPath();
+            this.brushOverlay.moveTo(px + ts, py + ts - s);
+            this.brushOverlay.lineTo(px + ts, py + ts);
+            this.brushOverlay.lineTo(px + ts - s, py + ts);
+            this.brushOverlay.strokePath();
+        } else {
+            // Area brush (Smooth Circular Area)
             const cx = tilePos.x * ts + ts / 2;
             const cy = tilePos.y * ts + ts / 2;
-            this.brushOverlay.lineBetween(cx - ts, cy, cx + ts, cy);
-            this.brushOverlay.lineBetween(cx, cy - ts, cx, cy + ts);
-        } else {
-            // Color-coded per category
-            const overlayColors = {
-                terrain: 0xffffff,
-                life: 0x44ff44,
-                disasters: 0xff4444,
-                magic: 0xaa44ff
-            };
-            const color = overlayColors[tool.category] || 0xffffff;
-            this.brushOverlay.lineStyle(1, color, 0.35);
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    if (dx * dx + dy * dy > radius * radius) continue;
-                    const tx = tilePos.x + dx;
-                    const ty = tilePos.y + dy;
-                    this.brushOverlay.strokeRect(tx * ts, ty * ts, ts, ts);
-                }
-            }
+            
+            // Draw a single smooth circle
+            this.brushOverlay.lineStyle(2, color, 0.6);
+            this.brushOverlay.fillStyle(color, 0.15);
+            this.brushOverlay.fillCircle(cx, cy, (radius + 0.5) * ts);
+            this.brushOverlay.strokeCircle(cx, cy, (radius + 0.5) * ts);
         }
     }
 

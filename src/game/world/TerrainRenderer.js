@@ -27,15 +27,26 @@ export class TerrainRenderer {
 
     renderChunk(chunkX, chunkY) {
         const key = `${chunkX},${chunkY}`;
-        let gfx = this.chunks.get(key);
-        if (!gfx) {
-            gfx = this.scene.add.graphics();
-            gfx.setDepth(0);
-            this.chunks.set(key, gfx);
-        }
-        gfx.clear();
-
         const { tileSize: ts, tiles, width, height } = this.worldMap;
+        const chunkPx = CHUNK_SIZE * ts;
+
+        let rt = this.chunks.get(key);
+        if (!rt) {
+            // Use rigorous RenderTexture sizing
+            rt = this.scene.add.renderTexture(chunkX * chunkPx, chunkY * chunkPx, chunkPx, chunkPx);
+            rt.setOrigin(0, 0);
+            rt.setDepth(0);
+            this.chunks.set(key, rt);
+        }
+        rt.clear();
+
+        if (!this._tempGfx) {
+            // Hidden graphic object used purely as a stencil
+            this._tempGfx = this.scene.add.graphics();
+            this._tempGfx.setVisible(false);
+        }
+        const gfx = this._tempGfx;
+        gfx.clear();
         const startX = chunkX * CHUNK_SIZE;
         const startY = chunkY * CHUNK_SIZE;
         const endX   = Math.min(startX + CHUNK_SIZE, width);
@@ -644,6 +655,10 @@ export class TerrainRenderer {
                 }
             }
         }
+
+        // Bake graphics into render texture!
+        // We shift the drawn world-space geometry back by the chunk origin
+        rt.draw(gfx, -chunkX * chunkPx, -chunkY * chunkPx);
 
         this.dirtyChunks.delete(key);
     }
